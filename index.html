@@ -49,7 +49,7 @@
         <!-- Loading Area -->
         <div id="loading-area" class="text-center py-12">
             <div class="loader mx-auto"></div>
-            <p class="mt-4 text-slate-600 animate-pulse">クイズを準備しています...</p>
+            <p class="mt-4 text-slate-600 animate-pulse">テストを準備しています...</p>
         </div>
 
         <!-- Start Area -->
@@ -101,7 +101,7 @@
                   <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                 </svg>
             </div>
-            <h2 class="text-2xl font-bold text-slate-800 mt-4">クイズ完了！</h2>
+            <h2 class="text-2xl font-bold text-slate-800 mt-4">テスト完了！</h2>
             <p id="results-for-name" class="mt-1 text-slate-600"></p>
             <p class="mt-4 text-lg text-slate-600">あなたのスコア</p>
             <p id="final-score" class="text-6xl font-extrabold my-2"></p>
@@ -181,7 +181,7 @@
             }));
             
             if (quizData.length === 0) {
-                showError("スプレッドシートにクイズの問題が登録されていません。");
+                showError("スプレッドシートに問題が登録されていません。");
                 return;
             }
             elements.loadingArea.classList.add('hidden');
@@ -359,4 +359,5 @@
 </script>
 </body>
 </html>
+
 
