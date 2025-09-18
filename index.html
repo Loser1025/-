@@ -43,7 +43,7 @@
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-slate-50 to-indigo-100 flex items-center justify-center min-h-screen py-8 px-4">
+<body class="bg-gradient-to-br from-slate-50 to-indigo-100 flex items-start justify-center min-h-screen py-16 px-4">
     <div id="app-container" class="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-2xl ring-1 ring-black/5">
         
         <!-- Loading Area -->
@@ -123,9 +123,10 @@
     </div>
 
 <script>
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwfLRwuMM6Pzk-agwGwU-JSW20OKDkI4BOLLZC-drhLLeVXKOCt9eQ1QAyVXSkD0jr/exec';
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwCF0PQQlf0QrqtFgOgu-SPpRmy3KV8u6Ikbz4Wm-sJoRFP1G4d7yWhkG1zSyJT3Hhqqg/exec';
 
     let quizData = [];
+    let userAnswers = [];
     let currentQuestionIndex = 0;
     let score = 0;
     let responderName = '';
@@ -181,7 +182,7 @@
             }));
             
             if (quizData.length === 0) {
-                showError("スプレッドシートに問題が登録されていません。");
+                showError("スプレッドシートにクイズの問題が登録されていません。");
                 return;
             }
             elements.loadingArea.classList.add('hidden');
@@ -202,12 +203,12 @@
         });
     }
     
-    function submitResults(name, scorePercentage) {
+    function submitResults(name, scorePercentage, answers) {
         elements.submissionStatus.textContent = '結果を記録中...';
         fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             mode: 'no-cors',
-            body: JSON.stringify({ name, score: scorePercentage }),
+            body: JSON.stringify({ name, score: scorePercentage, answers: answers }),
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         })
         .then(() => {
@@ -233,6 +234,7 @@
         elements.quizContainer.classList.remove('hidden');
         currentQuestionIndex = 0;
         score = 0;
+        userAnswers = []; // 回答履歴をリセット
         showQuestion();
         updateScore();
     }
@@ -261,6 +263,7 @@
     }
 
     function selectAnswer(button, selectedOption) {
+        userAnswers[currentQuestionIndex] = selectedOption.text; // 回答を記録
         elements.hintText.classList.add('hidden');
         Array.from(elements.answerOptions.children).forEach(btn => {
             btn.disabled = true;
@@ -316,7 +319,7 @@
             elements.finalScore.className = 'text-6xl font-extrabold text-amber-500 my-2';
         }
         elements.scoreMessage.textContent = message;
-        submitResults(responderName, percentage);
+        submitResults(responderName, percentage, userAnswers);
     }
     
     function restartQuiz() {
@@ -359,5 +362,4 @@
 </script>
 </body>
 </html>
-
 
