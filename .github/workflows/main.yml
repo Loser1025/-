@@ -1,0 +1,43 @@
+# ワークフローの名前
+name: Build Windows Application
+
+# ワークフローが実行されるタイミングを指定
+on:
+  push:
+    branches: [ "main" ] # mainブランチにpushされた時だけ実行
+
+# 実行される一連のタスク（ジョブ）を定義
+jobs:
+  build:
+    # このジョブを実行する仮想マシンのOSを指定
+    # ここで "windows-latest" を選ぶのが最重要！
+    runs-on: windows-latest
+
+    # ジョブ内のステップ（実行される個々のコマンド）
+    steps:
+      # 1. リポジトリのコードを仮想マシンにコピーする
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Python環境をセットアップする
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # あなたの使うPythonバージョンに合わせて変更
+
+      # 3. 必要なライブラリをインストールする
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. PyInstallerを使って.exeファイルをビルドする
+      - name: Build with PyInstaller
+        run: pyinstaller main.py --onefile --windowed
+
+      # 5. 完成した.exeファイルをアップロードしてダウンロード可能にする
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app # ダウンロードされるファイルの名前
+          path: dist/*.exe  # アップロードするファイルの場所
