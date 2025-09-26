@@ -33,7 +33,7 @@ jobs:
 
       # 4. PyInstallerを使って.exeファイルをビルドする
       - name: Build with PyInstaller
-        run: pyinstaller main.py --onefile --windowed
+        run: python -m PyInstaller main.py --onefile --windowed
 
       # 5. 完成した.exeファイルをアップロードしてダウンロード可能にする
       - name: Upload artifact
