@@ -1,3 +1,4 @@
 requests
 pydub
 python-dotenv
+pyinstaller
