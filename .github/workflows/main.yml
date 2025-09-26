@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # あなたの使うPythonバージョンに合わせて変更
+          python-version: '3.11' # あなたの使うPythonバージョンに合わせて変更
 
       # 3. 必要なライブラリをインストールする
       - name: Install dependencies
