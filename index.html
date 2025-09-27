@@ -1,44 +1,109 @@
-<script>
-    const transcribeBtn = document.getElementById('transcribe-btn');
-    const audioFileInput = document.getElementById('audio-file');
-    const resultDiv = document.getElementById('result');
-    const loader = document.getElementById('loader');
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwD-rTjg10Kv-Qp9cTN-vVRUcNUqHmCVDqmHHLWszCUxn8DOibotCP_yHcg_1hfFzLy/exec";
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAS 文字起こしフロントエンド</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 600px;
+            margin: 2em auto;
+            padding: 0 1em;
+            color: #333;
+        }
+        h1 {
+            color: #1a73e8;
+        }
+        input[type="file"] {
+            margin-bottom: 1em;
+        }
+        button {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        button:disabled {
+            background-color: #9e9e9e;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #1558b3;
+        }
+        #result {
+            white-space: pre-wrap;
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 1em;
+            margin-top: 1em;
+            min-height: 50px;
+            font-family: "Courier New", Courier, monospace;
+        }
+        #loader {
+            display: none;
+            margin-top: 1em;
+        }
+    </style>
+</head>
+<body>
 
-    transcribeBtn.addEventListener('click', async () => {
-        const audioFile = audioFileInput.files[0];
-        if (!audioFile) {
-            resultDiv.textContent = '音声ファイルを選択してください。';
-            return;
-        }
-        transcribeBtn.disabled = true;
-        loader.style.display = 'block';
-        resultDiv.textContent = 'サーバーにファイルを送信中...';
-        try {
-            const response = await fetch(GAS_WEB_APP_URL, {
-                method: 'POST',
-                body: audioFile,
-                headers: { 'Content-Type': audioFile.type }
-            });
-            resultDiv.textContent = '文字起こし処理中...';
-            const data = await response.json();
-            
-            // ▼▼▼ 変更点 ▼▼▼
-            // GASから返ってくる新しいデータ形式を確認します
-            if (data.status === "success") {
-              resultDiv.textContent = data.message + "\n\n" + data.transcript;
-            } else if (data.status === "error") {
-              throw new Error(data.error);
-            } else {
-              // もし古い形式のデータが返ってきた場合
-              resultDiv.textContent = "GASの更新が反映されていません。古いデータが返されました。\n\n" + JSON.stringify(data);
+    <h1>Gemini × GAS 文字起こし 🎙️</h1>
+    <p>文字起こししたい音声ファイルを選択してください。</p>
+
+    <input type="file" id="audio-file" accept="audio/*">
+    <button id="transcribe-btn">文字起こしを開始</button>
+
+    <div id="loader">処理中です...しばらくお待ちください。</div>
+    <h2>結果:</h2>
+    <pre id="result">ここに文字起こし結果が表示されます。</pre>
+
+    <script>
+        const transcribeBtn = document.getElementById('transcribe-btn');
+        const audioFileInput = document.getElementById('audio-file');
+        const resultDiv = document.getElementById('result');
+        const loader = document.getElementById('loader');
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwD-rTjg10Kv-Qp9cTN-vVRUcNUqHmCVDqmHHLWszCUxn8DOibotCP_yHcg_1hfFzLy/exec";
+
+        transcribeBtn.addEventListener('click', async () => {
+            const audioFile = audioFileInput.files[0];
+            if (!audioFile) {
+                resultDiv.textContent = '音声ファイルを選択してください。';
+                return;
             }
-        } catch (error) {
-            console.error('エラー:', error);
-            resultDiv.textContent = `エラーが発生しました:\n${error.message}`;
-        } finally {
-            transcribeBtn.disabled = false;
-            loader.style.display = 'none';
-        }
-    });
-</script>
+            transcribeBtn.disabled = true;
+            loader.style.display = 'block';
+            resultDiv.textContent = 'サーバーにファイルを送信中...';
+            try {
+                const response = await fetch(GAS_WEB_APP_URL, {
+                    method: 'POST',
+                    body: audioFile,
+                    headers: { 'Content-Type': audioFile.type }
+                });
+                resultDiv.textContent = '文字起こし処理中...';
+                const data = await response.json();
+                
+                // GASから返ってくるテスト用のデータ形式を確認します
+                if (data.status === "success") {
+                  resultDiv.textContent = data.message + "\n\n" + data.transcript;
+                } else if (data.status === "error") {
+                  throw new Error(data.error);
+                } else {
+                  // もし古い形式のデータが返ってきた場合
+                  resultDiv.textContent = "GASの更新が反映されていません。古いデータが返されました。\n\n" + JSON.stringify(data);
+                }
+            } catch (error) {
+                console.error('エラー:', error);
+                resultDiv.textContent = `エラーが発生しました:\n${error.message}`;
+            } finally {
+                transcribeBtn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+    </script>
+    </body>
+</html>
