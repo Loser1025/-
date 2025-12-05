@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>弁護士面談開催地から半径100kmの圏域地図</title>
+    
+    <!-- Leaflet CSSを読み込み -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    
+    <!-- Tailwind CSS (見た目を整えるため) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        /* 地図コンテナのスタイル */
+        #map {
+            /* 画面全体の高さを使い、上下左右に少し余白を持たせる */
+            height: calc(100vh - 32px); 
+            width: 100%;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        /* ポップアップのスタイルを日本語で見やすく調整 */
+        .leaflet-popup-content {
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<!-- bodyタグから余分なflexとp-4クラスを削除し、mapが画面全体を占めるように調整 -->
+<body class="bg-gray-50">
+
+    <!-- 地図を表示するコンテナ -->
+    <div id="map"></div>
+
+    <!-- Leaflet JavaScriptを読み込み ( integrity属性を削除し、読み込みエラーを回避) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            crossorigin=""></script>
+
+    <script>
+        // === 1. 地図の初期設定 ===
+        
+        // 地図の中心座標 (東京付近)
+        const initialLat = 35.6895;
+        const initialLon = 139.6917;
+        // 圏域が広くなるため、ズームレベルを5に下げる
+        const initialZoom = 5; 
+        
+        // Leafletで地図を初期化
+        const map = L.map('map').setView([initialLat, initialLon], initialZoom);
+
+        // 国土地理院の淡色地図（見やすく、円が目立つように）
+        const gsiTile = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
+        const attribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル</a>';
+
+        L.tileLayer(gsiTile, {
+            attribution: attribution,
+            maxZoom: 18,
+        }).addTo(map);
+
+        // === 2. 弁護士面談の開催地のデータ ===
+        // 半径100km = 100,000メートルに設定
+        const RADIUS_M = 100000;  
+
+        const eventLocations = [
+            { city: "札幌市 (北海道)", lat: 43.0619, lon: 141.3468 },
+            { city: "函館市 (北海道)", lat: 41.7667, lon: 140.7333 },
+            { city: "盛岡市 (岩手県)", lat: 39.7008, lon: 141.1561 },
+            { city: "仙台市 (宮城県)", lat: 38.2587, lon: 140.8722 },
+            { city: "郡山市 (福島県)", lat: 37.3833, lon: 140.3667 },
+            { city: "福島市 (福島県)", lat: 37.7608, lon: 140.4747 },
+            { city: "新潟市 (新潟県)", lat: 37.9140, lon: 139.0430 },
+            { city: "金沢市 (石川県)", lat: 36.5500, lon: 136.6500 },
+            { city: "港区虎ノ門 (東京都)", lat: 35.6669, lon: 139.7475 },
+            { city: "中央区八丁堀 (東京都)", lat: 35.6746, lon: 139.7776 },
+            { city: "中央区日本橋 (東京都)", lat: 35.6840, lon: 139.7745 },
+            { city: "新宿区西新宿 (東京都)", lat: 35.6900, lon: 139.6843 },
+            { city: "前橋市 (群馬県)", lat: 36.4050, lon: 139.0600 },
+            { city: "千葉市 (千葉県)", lat: 35.6000, lon: 140.1167 },
+            { city: "甲府市 (山梨県)", lat: 35.6671, lon: 138.5689 },
+            { city: "静岡市 (静岡県)", lat: 34.9785, lon: 138.3837 },
+            { city: "沼津市 (静岡県)", lat: 35.1031, lon: 138.8593 },
+            { city: "名古屋市 (愛知県)", lat: 35.1769, lon: 136.9094 },
+            { city: "大阪市 (大阪府)", lat: 34.6937, lon: 135.5023 },
+            { city: "津市 (三重県)", lat: 34.7269, lon: 136.5114 },
+            { city: "長浜市 (滋賀県)", lat: 35.3808, lon: 136.2783 },
+            { city: "神戸市 (兵庫県)", lat: 34.6901, lon: 135.1955 },
+            { city: "広島市 (広島県)", lat: 34.3944, lon: 132.4345 },
+            { city: "福山市 (広島県)", lat: 34.4892, lon: 133.3616 },
+            { city: "岩国市 (山口県)", lat: 34.1537, lon: 132.2167 },
+            { city: "鳥取市 (鳥取県)", lat: 35.5333, lon: 134.2333 },
+            { city: "高松市 (香川県)", lat: 34.3500, lon: 134.0500 },
+            { city: "高知市 (高知県)", lat: 33.5592, lon: 133.5592 },
+            { city: "福岡市 (福岡県)", lat: 33.5815, lon: 130.4254 },
+            { city: "佐賀市 (佐賀県)", lat: 33.2499, lon: 130.2993 },
+            { city: "長崎市 (長崎県)", lat: 32.7495, lon: 129.8796 },
+            { city: "大分市 (大分県)", lat: 33.2407, lon: 131.6085 },
+            { city: "熊本市 (熊本県)", lat: 32.8032, lon: 130.7079 },
+            { city: "鹿児島市 (鹿児島県)", lat: 31.5688, lon: 130.5495 },
+            { city: "那覇市 (沖縄県)", lat: 26.2167, lon: 127.6833 }
+        ];
+
+        // === 3. 円とマーカーの描画処理 ===
+        eventLocations.forEach(location => { 
+            const latlng = [location.lat, location.lon];
+            const popupContent = `
+                ${location.city}<br>
+                半径 100km 圏内
+            `;
+
+            // 100kmの円を描画
+            L.circle(latlng, {
+                color: '#E04E4E',        // 円の枠線色 (赤系)
+                fillColor: '#E04E4E',    // 塗りつぶし色
+                fillOpacity: 0.2,        // 塗りつぶしの透明度
+                radius: RADIUS_M         // 半径 (メートル単位)
+            }).bindPopup(popupContent).addTo(map);
+
+            // 中心点にマーカーを追加
+            L.marker(latlng).bindPopup(popupContent).addTo(map);
+        });
+
+    </script>
+</body>
+</html>
