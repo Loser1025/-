@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(NVM_HOME=\"C:\\\\\\\\Users\\\\\\\\Loser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\nvm\" NVM_SYMLINK=\"C:\\\\\\\\nvm4w\\\\\\\\nodejs\" \"/c/Users/Loser/AppData/Local/nvm/nvm.exe\":*)"
+    ]
+  }
+}
