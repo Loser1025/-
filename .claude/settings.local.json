@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(NVM_HOME=\"C:\\\\\\\\Users\\\\\\\\Loser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\nvm\" NVM_SYMLINK=\"C:\\\\\\\\nvm4w\\\\\\\\nodejs\" \"/c/Users/Loser/AppData/Local/nvm/nvm.exe\":*)"
+      "Bash(NVM_HOME=\"C:\\\\\\\\Users\\\\\\\\Loser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\nvm\" NVM_SYMLINK=\"C:\\\\\\\\nvm4w\\\\\\\\nodejs\" \"/c/Users/Loser/AppData/Local/nvm/nvm.exe\":*)",
+      "Bash(git update-ref:*)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(code --list-extensions:*)",
+      "WebFetch(domain:marketplace.visualstudio.com)"
     ]
   }
 }
