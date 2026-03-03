@@ -9,7 +9,8 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(code --list-extensions:*)",
-      "WebFetch(domain:marketplace.visualstudio.com)"
+      "WebFetch(domain:marketplace.visualstudio.com)",
+      "Bash(python3:*)"
     ]
   }
 }
