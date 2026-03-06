@@ -15,7 +15,11 @@
       "Bash(cmd.exe /c \"py --version\")",
       "Bash(powershell.exe -NoProfile -Command \"python --version\")",
       "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\Loser\\\\Desktop\\\\-\\\\-\\\\文字お越し\\\\_launcher.ps1\")",
-      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.ShowDialog\\(\\)\")"
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.ShowDialog\\(\\)\")",
+      "Bash(where python)",
+      "Bash(where python3)",
+      "Bash(winget --version)",
+      "Bash(winget list Python)"
     ]
   }
 }
