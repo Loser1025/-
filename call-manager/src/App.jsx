@@ -112,29 +112,23 @@ function CallManager() {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState(null);
-  // URLハッシュからトークンを取得（リダイレクト後）
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes('access_token')) {
-      const params = new URLSearchParams(hash.slice(1));
-      const t = params.get('access_token');
-      if (t) {
-        setToken(t);
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-    }
-  }, []);
-
   const login = () => {
-    const redirectUri = window.location.origin + window.location.pathname;
-    const params = new URLSearchParams({
+    if (!window.google?.accounts?.oauth2) {
+      setError('Googleライブラリ読み込み中です。数秒後に再度お試しください。');
+      return;
+    }
+    const client = window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: 'token',
       scope: 'https://www.googleapis.com/auth/spreadsheets',
-      prompt: 'select_account',
+      callback: (response) => {
+        if (response.error) {
+          setError(`ログインエラー: ${response.error}`);
+          return;
+        }
+        setToken(response.access_token);
+      },
     });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+    client.requestToken();
   };
 
   useEffect(() => {
