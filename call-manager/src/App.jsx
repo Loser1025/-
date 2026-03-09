@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 
 const CLIENT_ID = "87533023495-hdt3pp8ujq3p60ptgl66nqaesnli802v.apps.googleusercontent.com";
-const SS_ID = "1aU5_kB3GJx4EmdcgkZ71pJseQoscv0xY502fiW1LVI0";
+const SS_IDS = {
+  EAST: "1aU5_kB3GJx4EmdcgkZ71pJseQoscv0xY502fiW1LVI0",
+  WEST: "1y0nCiLHCnIQKb8BcoUjYTiIcqUGdjRYnSFMvk1jBuhY",
+};
 const SHEET = 'Lステ連携';
 const DEFAULT_RESULT_COL_IDX = 22; // デフォルトW列（自動検出できなかった場合のフォールバック）
 const idxToCol = (idx) => {
@@ -24,33 +27,83 @@ const parseCallLogs = (text) => {
   }, []);
 };
 
-const parseSheetRows = (values, resultColIdx) => {
+const extractType = (level) => {
+  const m = level.match(/【阻止T】([ABC])/);
+  return m ? m[1] : null;
+};
+
+// ヘッダー行からキーワードで列インデックスを検出
+const detectCol = (values, keywords, fallback) => {
+  for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
+    const row = values[ri];
+    const found = row.findIndex(cell => cell && keywords.some(kw => cell.toString().includes(kw)));
+    if (found !== -1) return found;
+  }
+  return fallback;
+};
+
+// excludeKeywordsを含む列を除外して検出
+const detectColExclude = (values, keywords, excludeKeywords, fallback) => {
+  for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
+    const row = values[ri];
+    const found = row.findIndex(cell =>
+      cell &&
+      keywords.some(kw => cell.toString().includes(kw)) &&
+      !excludeKeywords.some(ex => cell.toString().includes(ex))
+    );
+    if (found !== -1) return found;
+  }
+  return fallback;
+};
+
+// データ行から阻止T列を検出（ヘッダーではなく値でスキャン）
+const detectLevelCol = (values, fallback) => {
+  for (let i = 3; i < Math.min(values.length, 30); i++) {
+    const row = values[i];
+    for (let j = 0; j < row.length; j++) {
+      if (row[j] && row[j].toString().includes('阻止T')) return j;
+    }
+  }
+  return fallback;
+};
+
+const parseSheetRows = (values, cols) => {
   const result = [];
   for (let i = 3; i < values.length; i++) {
     const row = values[i];
-    const get = (idx) => (row[idx] || '').toString().trim();
-    const levelM = get(12);
-    if (!levelM.includes('処理T')) continue;
-    const callResultRaw = get(resultColIdx);
+    const get = (idx) => idx >= 0 ? (row[idx] || '').toString().trim() : '';
+    const levelM = get(cols.level);
+    if (!levelM.includes('阻止T')) continue;
+    const callResultRaw = get(cols.result);
     const callCount = countCalls(callResultRaw);
     result.push({
       id: i,
       rowIndex: i + 1,
-      date: get(0).slice(0, 10),
-      name: get(3),
-      clinic: get(5),
-      account: get(6),
-      content: get(7),
-      memo: get(8),
-      assignee: get(11),
+      date: get(cols.date).slice(0, 10),
+      name: get(cols.name),
+      clinic: get(cols.clinic),
+      account: get(cols.account),
+      content: get(cols.content),
+      memo: get(cols.memo),
+      assignee: get(cols.assignee),
       level: levelM,
+      type: extractType(levelM),
+      lstepUrl: cols.lstep >= 0 ? get(cols.lstep) : '',
       callResultRaw,
       callCount,
       callLogs: parseCallLogs(callResultRaw),
-      completed: get(13).toUpperCase() === 'TRUE',
+      completed: get(cols.completed).toUpperCase() === 'TRUE',
+      cancelStopDate: get(cols.cancelStopDate),
+      cancelDate: get(cols.cancelDate),
     });
   }
   return result;
+};
+
+const TYPE_COLORS = {
+  A: { bg: "#FEE2E2", text: "#991B1B" },
+  B: { bg: "#FEF3C7", text: "#92400E" },
+  C: { bg: "#D1FAE5", text: "#065F46" },
 };
 
 const RESULT_OPTIONS = ["不在", "折り返し待ち", "対応中", "解決済み", "再架電不要"];
@@ -120,13 +173,22 @@ function CallManager() {
     return null;
   });
   const [records, setRecords] = useState([]);
-  const [resultColIdx, setResultColIdx] = useState(DEFAULT_RESULT_COL_IDX);
+  const [cols, setCols] = useState({ date:0, name:3, clinic:5, account:6, content:7, memo:8, assignee:11, level:12, result:DEFAULT_RESULT_COL_IDX, completed:13, lstep:-1 });
+  const [sheetGid, setSheetGid] = useState(null);
+  const [region, setRegion] = useState('EAST');
+  const ssId = SS_IDS[region];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(1);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState(null);
+  const [lstepConfirm, setLstepConfirm] = useState(null); // { url, account, lineId }
+  const [accountIdMap, setAccountIdMap] = useState({});
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   // PKCEコード交換（リダイレクト後）
   useEffect(() => {
@@ -184,32 +246,74 @@ function CallManager() {
     setLoading(true);
     setError(null);
     const range = encodeURIComponent(`${SHEET}!A:AZ`);
-    fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SS_ID}/values/${range}`, {
+    fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const sheet = (data.sheets || []).find(s => s.properties?.title === SHEET);
+        if (sheet) setSheetGid(sheet.properties.sheetId);
+      })
+      .catch(() => {});
+    // 各アカウント一覧シートから@IDマッピングを取得
+    const accountRange = encodeURIComponent('各アカウント一覧!A:Z');
+    fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${accountRange}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error || !data.values) return;
+        const map = {};
+        data.values.forEach(row => {
+          const atIdx = row.findIndex(cell => cell && cell.toString().trim().startsWith('@'));
+          if (atIdx === -1) return;
+          const lineId = row[atIdx].toString().trim();
+          // @IDより前の列のみをアカウント名として登録（後ろの「広告など」列は除外）
+          for (let idx = 0; idx < atIdx; idx++) {
+            const name = (row[idx] || '').toString().trim();
+            if (name) map[name] = lineId;
+          }
+        });
+        setAccountIdMap(map);
+      })
+      .catch(() => {});
+
+    fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
       .then(data => {
         if (data.error) throw new Error(data.error.message);
         const values = data.values || [];
-        // ヘッダー行（0〜2行目）から「架電結果」を含む列を自動検出
-        let colIdx = DEFAULT_RESULT_COL_IDX;
-        for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
-          const found = values[ri].findIndex(cell => cell && cell.toString().includes('架電結果'));
-          if (found !== -1) { colIdx = found; break; }
-        }
-        setResultColIdx(colIdx);
-        setRecords(parseSheetRows(values, colIdx));
+        const detectedCols = {
+          date:      detectCol(values, ['日付'], 0),
+          name:      detectCol(values, ['名前', '顧客名'], 3),
+          clinic:    detectCol(values, ['クリニック', '院'], 5),
+          account:   detectCol(values, ['アカウント'], 6),
+          content:   detectCol(values, ['内容', 'コンテンツ'], 7),
+          memo:      detectCol(values, ['備考', 'メモ'], 8),
+          assignee:  detectCol(values, ['担当者', '対応者'], 11),
+          level:     detectLevelCol(values, 12),
+          result:          detectCol(values, ['架電結果'], DEFAULT_RESULT_COL_IDX),
+          completed:       detectCol(values, ['対応完了'], 13),
+          lstep:           detectCol(values, ['Lステップ'], -1),
+          cancelStopDate:  detectCol(values, ['解約阻止'], -1),
+          cancelDate:      detectColExclude(values, ['解約'], ['阻止'], -1),
+        };
+        setCols(detectedCols);
+        setRecords(parseSheetRows(values, detectedCols));
         setLoading(false);
       })
       .catch(e => {
         setError(e.message);
         setLoading(false);
       });
-  }, [token]);
+  }, [token, region]);
 
   const isTerminal = (r) => r.callLogs.some(l => TERMINAL_RESULTS.includes(l.result));
-  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r));
-  const completed = records.filter(r => r.callCount >= 3 || isTerminal(r));
+  const isDealDone = (r) => !!(r.cancelStopDate || r.cancelDate);
+  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r) && !isDealDone(r));
+  const completed = records.filter(r => r.callCount >= 3 || isTerminal(r) || isDealDone(r));
 
   const openModal = (id) => { setModal({ id }); setForm(EMPTY_FORM); };
   const closeModal = () => setModal(null);
@@ -225,10 +329,11 @@ function CallManager() {
       : `架電${callNum} ${form.result}${form.note ? ' ' + form.note : ''}`;
     const newRaw = rec.callResultRaw ? `${rec.callResultRaw}\n${newLine}` : newLine;
 
+    const willComplete = terminal || rec.callCount >= 2;
     try {
-      const range = encodeURIComponent(`${SHEET}!${idxToCol(resultColIdx)}${rec.rowIndex}`);
+      const range = encodeURIComponent(`${SHEET}!${idxToCol(cols.result)}${rec.rowIndex}`);
       const res = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SS_ID}/values/${range}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}?valueInputOption=USER_ENTERED`,
         {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -238,6 +343,17 @@ function CallManager() {
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error?.message || '書き込み失敗');
+      }
+      if (willComplete) {
+        const compRange = encodeURIComponent(`${SHEET}!${idxToCol(cols.completed)}${rec.rowIndex}`);
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${compRange}?valueInputOption=USER_ENTERED`,
+          {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [['TRUE']] }),
+          }
+        );
       }
     } catch (e) {
       showToast(`エラー: ${e.message}`);
@@ -259,6 +375,29 @@ function CallManager() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
+  const sendChat = async () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    const newMessages = [...chatMessages, { role: 'user', content: text }];
+    setChatMessages(newMessages);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.content }]);
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `エラー: ${e.message}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const rec = modal ? records.find(r => r.id === modal.id) : null;
   const tabData = [
     { label: "1回目", count: filtered(1).length },
@@ -267,6 +406,10 @@ function CallManager() {
     { label: "完了", count: completed.length },
   ];
   const listToShow = activeTab <= 3 ? filtered(activeTab) : completed;
+
+  // 全レコード中で名前が重複しているものをセット化
+  const nameCounts = records.reduce((acc, r) => { acc[r.name] = (acc[r.name] || 0) + 1; return acc; }, {});
+  const duplicateNames = new Set(Object.keys(nameCounts).filter(n => nameCounts[n] > 1));
 
   // ─── Login Screen ───────────────────────────────────────────────────────────
   if (!token) {
@@ -308,6 +451,18 @@ function CallManager() {
           <div style={{ fontSize: 12, color: "#6B7280" }}>Call Management System</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 3, gap: 2 }}>
+            {['EAST', 'WEST'].map(r => (
+              <button key={r} onClick={() => { setRegion(r); setRecords([]); setActiveTab(1); }} style={{
+                background: region === r ? "#fff" : "transparent",
+                border: "none", borderRadius: 6, padding: "4px 12px",
+                fontSize: 12, fontWeight: 700, cursor: "pointer",
+                color: region === r ? "#4F46E5" : "#6B7280",
+                boxShadow: region === r ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                transition: "all 0.15s"
+              }}>{r}</button>
+            ))}
+          </div>
           <div style={{ fontSize: 13, color: "#6B7280" }}>総件数: <span style={{ color: "#1F2937", fontWeight: 600 }}>{records.length}</span></div>
           <button onClick={() => { setToken(null); localStorage.removeItem('gtoken'); localStorage.removeItem('gtoken_expiry'); }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>ログアウト</button>
         </div>
@@ -352,14 +507,18 @@ function CallManager() {
           </div>
         ) : listToShow.map(r => {
           const badge = BADGE_COLORS[r.content] || { bg: "#F3F4F6", text: "#6B7280" };
+          const isDup = duplicateNames.has(r.name);
           return (
             <div key={r.id} style={{
-              background: "#fff", border: "1px solid #E5E7EB", borderRadius: 14,
+              background: isDup ? "#FFF5F5" : "#fff",
+              border: `1px solid ${isDup ? "#FCA5A5" : "#E5E7EB"}`,
+              borderRadius: 14,
               padding: "18px 22px", marginBottom: 12, display: "flex", alignItems: "center", gap: 18,
-              transition: "border-color 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              transition: "border-color 0.15s",
+              boxShadow: isDup ? "0 1px 6px rgba(239,68,68,0.15)" : "0 1px 3px rgba(0,0,0,0.05)",
             }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = "#A5B4FC"}
-              onMouseLeave={e => e.currentTarget.style.borderColor = "#E5E7EB"}
+              onMouseEnter={e => e.currentTarget.style.borderColor = isDup ? "#F87171" : "#A5B4FC"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = isDup ? "#FCA5A5" : "#E5E7EB"}
             >
               <div style={{
                 width: 40, height: 40, borderRadius: 10, flexShrink: 0,
@@ -372,7 +531,15 @@ function CallManager() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                   <span style={{ fontSize: 16, fontWeight: 700 }}>{r.name}</span>
-                  <span style={{ fontSize: 12, background: "#F3F4F6", color: "#6B7280", borderRadius: 6, padding: "2px 8px" }}>{r.clinic}</span>
+                  {r.lstepUrl && (
+                    <button onClick={e => { e.stopPropagation(); setLstepConfirm({ url: r.lstepUrl, account: r.account, lineId: accountIdMap[r.account] || null }); }} style={{
+                      fontSize: 11, background: "#F0FDF4", border: "1px solid #86EFAC", color: "#15803D",
+                      borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontWeight: 600,
+                    }}>Lステップ↗</button>
+                  )}
+                  {r.type && (() => { const c = TYPE_COLORS[r.type] || { bg: "#F3F4F6", text: "#6B7280" }; return (
+                    <span style={{ fontSize: 12, background: c.bg, color: c.text, borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>{r.type}</span>
+                  ); })()}
                   {r.account && <span style={{ fontSize: 12, background: "#EFF6FF", color: "#1D4ED8", borderRadius: 6, padding: "2px 8px" }}>{r.account}</span>}
                   <span style={{ fontSize: 11, borderRadius: 6, padding: "2px 8px", background: badge.bg, color: badge.text }}>{r.content}</span>
                 </div>
@@ -416,8 +583,15 @@ function CallManager() {
 
             {/* Modal Header */}
             <div style={{ padding: "24px 28px 16px", borderBottom: "1px solid #E5E7EB", flexShrink: 0 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 2 }}>{rec.name}</div>
-              <div style={{ fontSize: 13, color: "#6B7280" }}>{rec.clinic}{rec.account ? ` · ${rec.account}` : ''} · {rec.content} · {rec.callCount + 1}回目架電</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{rec.name}</div>
+                <a
+                  href={`https://docs.google.com/spreadsheets/d/${ssId}/edit${sheetGid !== null ? `#gid=${sheetGid}&range=A${rec.rowIndex}` : ''}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 11, background: "#F0FDF4", border: "1px solid #86EFAC", color: "#15803D", borderRadius: 6, padding: "2px 8px", textDecoration: "none", fontWeight: 600 }}
+                >シートで開く↗</a>
+              </div>
+              <div style={{ fontSize: 13, color: "#6B7280" }}>{rec.type || rec.clinic}{rec.account ? ` · ${rec.account}` : ''} · {rec.content} · {rec.callCount + 1}回目架電</div>
             </div>
 
             {/* Modal Body (scrollable) */}
@@ -606,12 +780,103 @@ function CallManager() {
         </div>
       )}
 
+      {/* Lステップ確認モーダル */}
+      {lstepConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24 }}
+          onClick={() => setLstepConfirm(null)}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "28px 32px", maxWidth: 360, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", textAlign: "center" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Lステップを開く前に</div>
+            <div style={{ fontSize: 14, color: "#374151", marginBottom: 6 }}>
+              Lステップで以下のアカウントに切り替えてください
+            </div>
+            {lstepConfirm.account && (
+              <div style={{ background: "#EEF2FF", borderRadius: 8, padding: "10px 16px", marginBottom: 20, display: "inline-block" }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#4F46E5" }}>{lstepConfirm.account}</div>
+                {lstepConfirm.lineId && (
+                  <div style={{ fontSize: 14, color: "#6D28D9", marginTop: 4, fontWeight: 600 }}>{lstepConfirm.lineId}</div>
+                )}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setLstepConfirm(null)} style={{ flex: 1, background: "#F9FAFB", border: "1px solid #E5E7EB", color: "#6B7280", borderRadius: 10, padding: "10px", fontSize: 14, cursor: "pointer" }}>
+                キャンセル
+              </button>
+              <a href={lstepConfirm.url} target="_blank" rel="noopener noreferrer"
+                onClick={() => setLstepConfirm(null)}
+                style={{ flex: 2, background: "linear-gradient(135deg,#4F46E5,#7C3AED)", color: "#fff", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                切り替え済み・開く →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div style={{ position: "fixed", bottom: 32, left: "50%", transform: "translateX(-50%)", background: "#ECFDF5", border: "1px solid #6EE7B7", color: "#065F46", borderRadius: 12, padding: "12px 24px", fontSize: 14, fontWeight: 500, zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
           ✓ {toast}
         </div>
       )}
+
+      {/* Chat */}
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}>
+        {chatOpen && (
+          <div style={{ width: 360, height: 480, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 20, boxShadow: "0 20px 60px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg,#4F46E5,#7C3AED)" }}>
+              <div style={{ fontSize: 18 }}>🤖</div>
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>仕様AIアシスタント</div>
+              <button onClick={() => setChatOpen(false)} style={{ marginLeft: "auto", background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 10 }}>
+              {chatMessages.length === 0 && (
+                <div style={{ color: "#9CA3AF", fontSize: 13, textAlign: "center", marginTop: 40 }}>
+                  アプリの仕様について<br />なんでも聞いてください
+                </div>
+              )}
+              {chatMessages.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === 'user' ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "80%", padding: "10px 14px", borderRadius: 12, fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                    background: m.role === 'user' ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#F3F4F6",
+                    color: m.role === 'user' ? "#fff" : "#1F2937",
+                    borderBottomRightRadius: m.role === 'user' ? 4 : 12,
+                    borderBottomLeftRadius: m.role === 'assistant' ? 4 : 12,
+                  }}>{m.content}</div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{ background: "#F3F4F6", borderRadius: 12, borderBottomLeftRadius: 4, padding: "10px 14px", fontSize: 13, color: "#6B7280" }}>考え中...</div>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #E5E7EB", display: "flex", gap: 8 }}>
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
+                placeholder="質問を入力..."
+                style={{ flex: 1, background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none", fontFamily: "'Noto Sans JP', sans-serif" }}
+              />
+              <button onClick={sendChat} disabled={!chatInput.trim() || chatLoading} style={{
+                background: chatInput.trim() && !chatLoading ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#F3F4F6",
+                border: "none", borderRadius: 8, padding: "8px 14px", cursor: chatInput.trim() && !chatLoading ? "pointer" : "not-allowed",
+                color: chatInput.trim() && !chatLoading ? "#fff" : "#9CA3AF", fontSize: 14, fontWeight: 700,
+              }}>↑</button>
+            </div>
+          </div>
+        )}
+        <button onClick={() => setChatOpen(o => !o)} style={{
+          width: 52, height: 52, borderRadius: "50%", border: "none", cursor: "pointer",
+          background: "linear-gradient(135deg,#4F46E5,#7C3AED)", boxShadow: "0 4px 16px rgba(99,102,241,0.4)",
+          fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.15s",
+        }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+        >🤖</button>
+      </div>
     </div>
   );
 }
