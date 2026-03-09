@@ -19,7 +19,12 @@
       "Bash(where python)",
       "Bash(where python3)",
       "Bash(winget --version)",
-      "Bash(winget list Python)"
+      "Bash(winget list Python)",
+      "Bash(npm create vite@latest postal-distance-app -- --template react-ts)",
+      "Bash(npm install)",
+      "Bash(npx create-next-app@latest postal-distance-next --ts --eslint --no-tailwind --no-src-dir --app --no-turbopack --import-alias=\"@/*\" --yes)",
+      "Bash(npm create vite@latest call-manager -- --template react)",
+      "Bash(python -c \":*)"
     ]
   }
 }

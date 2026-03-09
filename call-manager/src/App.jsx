@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
 
-const CLIENT_ID = "835642176302-32ovv148lr7on1i2st7i68faqr58rafn.apps.googleusercontent.com";
-const SS_ID = import.meta.env.VITE_SPREADSHEET_ID;
+const CLIENT_ID = "87533023495-hdt3pp8ujq3p60ptgl66nqaesnli802v.apps.googleusercontent.com";
+const SS_ID = "1aU5_kB3GJx4EmdcgkZ71pJseQoscv0xY502fiW1LVI0";
 const SHEET = 'Lステ連携';
+const DEFAULT_RESULT_COL_IDX = 22; // デフォルトW列（自動検出できなかった場合のフォールバック）
+const idxToCol = (idx) => {
+  let s = '', n = idx + 1;
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+};
 
 const countCalls = (text) => {
   if (!text) return 0;
@@ -18,14 +24,14 @@ const parseCallLogs = (text) => {
   }, []);
 };
 
-const parseSheetRows = (values) => {
+const parseSheetRows = (values, resultColIdx) => {
   const result = [];
   for (let i = 3; i < values.length; i++) {
     const row = values[i];
     const get = (idx) => (row[idx] || '').toString().trim();
     const levelM = get(12);
     if (!levelM.includes('処理T')) continue;
-    const callResultRaw = get(21);
+    const callResultRaw = get(resultColIdx);
     const callCount = countCalls(callResultRaw);
     result.push({
       id: i,
@@ -48,6 +54,7 @@ const parseSheetRows = (values) => {
 };
 
 const RESULT_OPTIONS = ["不在", "折り返し待ち", "対応中", "解決済み", "再架電不要"];
+const TERMINAL_RESULTS = ["対応中", "解決済み", "再架電不要"];
 const BADGE_COLORS = {
   "クレーム": { bg: "#FEE2E2", text: "#991B1B" },
   "キャンセル(クレーム)": { bg: "#FEF3C7", text: "#92400E" },
@@ -104,45 +111,94 @@ export default function App() {
 }
 
 function CallManager() {
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => {
+    const t = localStorage.getItem('gtoken');
+    const exp = localStorage.getItem('gtoken_expiry');
+    if (t && exp && Date.now() < parseInt(exp)) return t;
+    localStorage.removeItem('gtoken');
+    localStorage.removeItem('gtoken_expiry');
+    return null;
+  });
   const [records, setRecords] = useState([]);
+  const [resultColIdx, setResultColIdx] = useState(DEFAULT_RESULT_COL_IDX);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(1);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState(null);
-  const login = () => {
-    if (!window.google?.accounts?.oauth2) {
-      setError('Googleライブラリ読み込み中です。数秒後に再度お試しください。');
-      return;
+
+  // PKCEコード交換（リダイレクト後）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+    const verifier = sessionStorage.getItem('pkce_verifier');
+    if (!verifier) return;
+    sessionStorage.removeItem('pkce_verifier');
+    window.history.replaceState(null, '', window.location.pathname);
+    setLoading(true);
+    const redirectUri = window.location.origin + '/';
+    fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirectUri }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        localStorage.setItem('gtoken', data.access_token);
+        localStorage.setItem('gtoken_expiry', String(Date.now() + 55 * 60 * 1000));
+        setToken(data.access_token);
+        setLoading(false);
+      })
+      .catch(e => { setError(`ログインエラー: ${e.message}`); setLoading(false); });
+  }, []);
+
+  const login = async () => {
+    try {
+      const array = new Uint8Array(32);
+      crypto.getRandomValues(array);
+      const verifier = btoa(String.fromCharCode(...array)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      sessionStorage.setItem('pkce_verifier', verifier);
+      const redirectUri = window.location.origin + '/';
+      const p = new URLSearchParams({
+        client_id: CLIENT_ID,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'https://www.googleapis.com/auth/spreadsheets',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        prompt: 'select_account',
+      });
+      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${p}`;
+    } catch (e) {
+      setError(`ログインエラー: ${e.message || String(e)}`);
     }
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
-      callback: (response) => {
-        if (response.error) {
-          setError(`ログインエラー: ${response.error}`);
-          return;
-        }
-        setToken(response.access_token);
-      },
-    });
-    client.requestToken();
   };
 
   useEffect(() => {
     if (!token) return;
     setLoading(true);
     setError(null);
-    const range = encodeURIComponent(`${SHEET}!A:V`);
+    const range = encodeURIComponent(`${SHEET}!A:AZ`);
     fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SS_ID}/values/${range}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
       .then(data => {
         if (data.error) throw new Error(data.error.message);
-        setRecords(parseSheetRows(data.values || []));
+        const values = data.values || [];
+        // ヘッダー行（0〜2行目）から「架電結果」を含む列を自動検出
+        let colIdx = DEFAULT_RESULT_COL_IDX;
+        for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
+          const found = values[ri].findIndex(cell => cell && cell.toString().includes('架電結果'));
+          if (found !== -1) { colIdx = found; break; }
+        }
+        setResultColIdx(colIdx);
+        setRecords(parseSheetRows(values, colIdx));
         setLoading(false);
       })
       .catch(e => {
@@ -151,8 +207,9 @@ function CallManager() {
       });
   }, [token]);
 
-  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3);
-  const completed = records.filter(r => r.callCount >= 3 || r.callLogs.some(l => l.result === "解決済み" || l.result === "再架電不要"));
+  const isTerminal = (r) => r.callLogs.some(l => TERMINAL_RESULTS.includes(l.result));
+  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r));
+  const completed = records.filter(r => r.callCount >= 3 || isTerminal(r));
 
   const openModal = (id) => { setModal({ id }); setForm(EMPTY_FORM); };
   const closeModal = () => setModal(null);
@@ -161,12 +218,15 @@ function CallManager() {
   const handleSubmit = async () => {
     if (!form.result) return;
     const today = new Date().toLocaleDateString("ja-JP");
+    const terminal = TERMINAL_RESULTS.includes(form.result);
     const callNum = ['①', '②', '③'][rec.callCount] || '③';
-    const newLine = `架電${callNum} ${form.result}${form.note ? ' ' + form.note : ''}`;
+    const newLine = terminal
+      ? `${form.result}${form.note ? ' ' + form.note : ''}`
+      : `架電${callNum} ${form.result}${form.note ? ' ' + form.note : ''}`;
     const newRaw = rec.callResultRaw ? `${rec.callResultRaw}\n${newLine}` : newLine;
 
     try {
-      const range = encodeURIComponent(`${SHEET}!V${rec.rowIndex}`);
+      const range = encodeURIComponent(`${SHEET}!${idxToCol(resultColIdx)}${rec.rowIndex}`);
       const res = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${SS_ID}/values/${range}?valueInputOption=USER_ENTERED`,
         {
@@ -189,7 +249,7 @@ function CallManager() {
       return {
         ...r,
         callResultRaw: newRaw,
-        callCount: r.callCount + 1,
+        callCount: terminal ? r.callCount : r.callCount + 1,
         callLogs: [...r.callLogs, { round: r.callCount + 1, result: form.result, note: form.note, date: today }]
       };
     }));
@@ -249,7 +309,7 @@ function CallManager() {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ fontSize: 13, color: "#6B7280" }}>総件数: <span style={{ color: "#1F2937", fontWeight: 600 }}>{records.length}</span></div>
-          <button onClick={() => setToken(null)} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>ログアウト</button>
+          <button onClick={() => { setToken(null); localStorage.removeItem('gtoken'); localStorage.removeItem('gtoken_expiry'); }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>ログアウト</button>
         </div>
       </div>
 
