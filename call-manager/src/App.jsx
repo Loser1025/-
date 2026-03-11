@@ -1,11 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const CLIENT_ID = "87533023495-hdt3pp8ujq3p60ptgl66nqaesnli802v.apps.googleusercontent.com";
 const SS_IDS = {
   EAST: "1aU5_kB3GJx4EmdcgkZ71pJseQoscv0xY502fiW1LVI0",
   WEST: "1y0nCiLHCnIQKb8BcoUjYTiIcqUGdjRYnSFMvk1jBuhY",
+  ATOM: "12fjFyhZ9vkYV_-KDMHH4O3mBRN8e6HZ9FXBLMREVSkQ",
 };
-const SHEET = 'Lステ連携';
+const SHEETS = {
+  EAST: 'Lステ連携',
+  WEST: 'Lステ連携',
+  ATOM: '★新★Lステ連携',
+};
 const DEFAULT_RESULT_COL_IDX = 22; // デフォルトW列（自動検出できなかった場合のフォールバック）
 const idxToCol = (idx) => {
   let s = '', n = idx + 1;
@@ -32,6 +37,16 @@ const extractType = (level) => {
   return m ? m[1] : null;
 };
 
+// ヘッダー行から完全一致で列インデックスを検出
+const detectColExact = (values, keyword, fallback) => {
+  for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
+    const row = values[ri];
+    const found = row.findIndex(cell => cell && cell.toString().trim() === keyword);
+    if (found !== -1) return found;
+  }
+  return fallback;
+};
+
 // ヘッダー行からキーワードで列インデックスを検出
 const detectCol = (values, keywords, fallback) => {
   for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
@@ -42,23 +57,11 @@ const detectCol = (values, keywords, fallback) => {
   return fallback;
 };
 
-// excludeKeywordsを含む列を除外して検出
-const detectColExclude = (values, keywords, excludeKeywords, fallback) => {
-  for (let ri = 0; ri <= 2 && ri < values.length; ri++) {
-    const row = values[ri];
-    const found = row.findIndex(cell =>
-      cell &&
-      keywords.some(kw => cell.toString().includes(kw)) &&
-      !excludeKeywords.some(ex => cell.toString().includes(ex))
-    );
-    if (found !== -1) return found;
-  }
-  return fallback;
-};
+
 
 // データ行から阻止T列を検出（ヘッダーではなく値でスキャン）
 const detectLevelCol = (values, fallback) => {
-  for (let i = 3; i < Math.min(values.length, 30); i++) {
+  for (let i = 3; i < values.length; i++) {
     const row = values[i];
     for (let j = 0; j < row.length; j++) {
       if (row[j] && row[j].toString().includes('阻止T')) return j;
@@ -93,8 +96,15 @@ const parseSheetRows = (values, cols) => {
       callCount,
       callLogs: parseCallLogs(callResultRaw),
       completed: get(cols.completed).toUpperCase() === 'TRUE',
+      team: get(cols.team),
+      firstResponseDate: get(cols.firstResponseDate),
+      initialResponseDate: get(cols.initialResponseDate),
       cancelStopDate: get(cols.cancelStopDate),
-      cancelDate: get(cols.cancelDate),
+      refundAmount: get(cols.refundAmount),
+      landingAmount: get(cols.landingAmount),
+      naCall: get(cols.naCall),
+      time: get(cols.time),
+      sharedMemo: get(cols.sharedMemo),
     });
   }
   return result;
@@ -106,8 +116,8 @@ const TYPE_COLORS = {
   C: { bg: "#D1FAE5", text: "#065F46" },
 };
 
-const RESULT_OPTIONS = ["不在", "折り返し待ち", "対応中", "解決済み", "再架電不要"];
-const TERMINAL_RESULTS = ["対応中", "解決済み", "再架電不要"];
+const RESULT_OPTIONS = ["アポ不通", "不在", "解決済み", "通話アポ獲得"];
+const TERMINAL_RESULTS = ["解決済み"];
 const BADGE_COLORS = {
   "クレーム": { bg: "#FEE2E2", text: "#991B1B" },
   "キャンセル(クレーム)": { bg: "#FEF3C7", text: "#92400E" },
@@ -119,12 +129,15 @@ const EMPTY_FORM = {
   note: "",
   team: "",
   firstResponseDate: "",
+  initialResponseDate: "",
   assignee1: "",
   assignee2: "",
   cancelStopDate: "",
   refundAmount: "",
   landingAmount: "",
-  cancelDate: "",
+  cancelProcess: false,
+  naCallDate: "",
+  naCallTime: "",
   laccarURL: "",
   template: "",
   vip: false,
@@ -139,10 +152,6 @@ const EMPTY_FORM = {
   contractContent: "",
   contractAmount1: "",
   contractAmount2: "",
-  refusalMenu: "",
-  refusalReasonCount: "",
-  refusalReasonSub: "",
-  freeNotes: "",
 };
 
 const inputStyle = {
@@ -173,13 +182,15 @@ function CallManager() {
     return null;
   });
   const [records, setRecords] = useState([]);
-  const [cols, setCols] = useState({ date:0, name:3, clinic:5, account:6, content:7, memo:8, assignee:11, level:12, result:DEFAULT_RESULT_COL_IDX, completed:13, lstep:-1 });
+  const [cols, setCols] = useState({ date:0, time:-1, name:3, clinic:5, account:6, content:7, memo:8, assignee:11, level:12, result:DEFAULT_RESULT_COL_IDX, completed:13, lstep:-1, naCall:-1, team:-1, firstResponseDate:-1, initialResponseDate:-1, cancelStopDate:-1, refundAmount:-1, landingAmount:-1 });
   const [sheetGid, setSheetGid] = useState(null);
-  const [region, setRegion] = useState('EAST');
+  const [region, setRegion] = useState(() => localStorage.getItem('cm_region') || 'EAST');
   const ssId = SS_IDS[region];
+  const sheetName = SHEETS[region];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState(1);
+  const lastSubmitRef = useRef(0); // 最終登録時刻（ms）
+  const [activeTab, setActiveTab] = useState(() => parseInt(localStorage.getItem('cm_tab') || '1'));
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState(null);
@@ -189,6 +200,10 @@ function CallManager() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [sortOrder, setSortOrder] = useState(null); // null | 'asc' | 'desc'
+  const [sortOpen, setSortOpen] = useState(false);
+  const [apoSortMap, setApoSortMap] = useState({});
+  const [sortLoading, setSortLoading] = useState(false);
 
   // PKCEコード交換（リダイレクト後）
   useEffect(() => {
@@ -241,17 +256,19 @@ function CallManager() {
     }
   };
 
-  useEffect(() => {
+  const loadData = (force = false) => {
     if (!token) return;
+    // 登録直後5秒以内はタブ切り替え時の自動リロードをスキップ（楽観更新を保護）
+    if (!force && Date.now() - lastSubmitRef.current < 5000) return;
     setLoading(true);
     setError(null);
-    const range = encodeURIComponent(`${SHEET}!A:AZ`);
+    const range = encodeURIComponent(`${sheetName}!A:AZ`);
     fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
       .then(data => {
-        const sheet = (data.sheets || []).find(s => s.properties?.title === SHEET);
+        const sheet = (data.sheets || []).find(s => s.properties?.title === sheetName);
         if (sheet) setSheetGid(sheet.properties.sheetId);
       })
       .catch(() => {});
@@ -294,12 +311,20 @@ function CallManager() {
           memo:      detectCol(values, ['備考', 'メモ'], 8),
           assignee:  detectCol(values, ['担当者', '対応者'], 11),
           level:     detectLevelCol(values, 12),
-          result:          detectCol(values, ['架電結果'], DEFAULT_RESULT_COL_IDX),
-          completed:       detectCol(values, ['対応完了'], 13),
-          lstep:           detectCol(values, ['Lステップ'], -1),
-          cancelStopDate:  detectCol(values, ['解約阻止'], -1),
-          cancelDate:      detectColExclude(values, ['解約'], ['阻止'], -1),
+          result:              detectCol(values, ['架電結果'], DEFAULT_RESULT_COL_IDX),
+          completed:           detectCol(values, ['対応完了'], 13),
+          lstep:               detectCol(values, ['Lステップ'], -1),
+          team:                detectCol(values, ['対応チーム'], -1),
+          firstResponseDate:   detectCol(values, ['対応開始日'], -1),
+          initialResponseDate: detectCol(values, ['初回対応日'], -1),
+          cancelStopDate:      detectCol(values, ['解約阻止日', '解約阻止'], -1),
+          naCall:              detectCol(values, ['NA架電'], -1),
+          time:                detectColExact(values, '時間', -1),
+          refundAmount:        detectCol(values, ['損害金見込み'], -1),
+          landingAmount:       detectCol(values, ['着地の損害金', '着地損害金'], -1),
+          sharedMemo:          detectCol(values, ['備考（自由記述）'], -1),
         };
+        console.log('[列検出結果]', region, detectedCols);
         setCols(detectedCols);
         setRecords(parseSheetRows(values, detectedCols));
         setLoading(false);
@@ -308,12 +333,16 @@ function CallManager() {
         setError(e.message);
         setLoading(false);
       });
-  }, [token, region]);
+  };
+
+  useEffect(() => { loadData(true); }, [token, region]);
 
   const isTerminal = (r) => r.callLogs.some(l => TERMINAL_RESULTS.includes(l.result));
-  const isDealDone = (r) => !!(r.cancelStopDate || r.cancelDate);
-  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r) && !isDealDone(r));
+  const isDealDone = (r) => !!(r.cancelStopDate || r.team?.includes('解約処理'));
+  const isApo = (r) => !!r.naCall && !['TRUE', 'FALSE'].includes(r.naCall.toUpperCase());
+  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r) && !isDealDone(r) && !isApo(r));
   const completed = records.filter(r => r.callCount >= 3 || isTerminal(r) || isDealDone(r));
+
 
   const openModal = (id) => { setModal({ id }); setForm(EMPTY_FORM); };
   const closeModal = () => setModal(null);
@@ -321,17 +350,30 @@ function CallManager() {
 
   const handleSubmit = async () => {
     if (!form.result) return;
-    const today = new Date().toLocaleDateString("ja-JP");
+    const now = new Date();
+    const today = now.toLocaleDateString("ja-JP");
+    const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
     const terminal = TERMINAL_RESULTS.includes(form.result);
+    const apoMiss = form.result === "アポ不通";
+    const apoGet = form.result === "通話アポ獲得";
     const callNum = ['①', '②', '③'][rec.callCount] || '③';
-    const newLine = terminal
-      ? `${form.result}${form.note ? ' ' + form.note : ''}`
-      : `架電${callNum} ${form.result}${form.note ? ' ' + form.note : ''}`;
+    const apoCount = rec.callLogs.filter(l => l.result === 'アポ不通').length;
+    const apoNum = ['①', '②', '③'][apoCount] || '③';
+    const apoGetDateStr = apoGet && form.naCallDate
+      ? ` ${form.naCallDate}${form.naCallTime ? ' ' + form.naCallTime : ''}`
+      : '';
+    const newLine = apoMiss
+      ? `${dateStr}アポ不通${apoNum}${form.note ? ' ' + form.note : ''}`
+      : apoGet
+        ? `${dateStr}架電${callNum} 通話アポ獲得${apoGetDateStr}`
+        : terminal
+          ? `${dateStr}${form.result}${form.note ? ' ' + form.note : ''}`
+          : `${dateStr}架電${callNum} ${form.result}${form.note ? ' ' + form.note : ''}`;
     const newRaw = rec.callResultRaw ? `${rec.callResultRaw}\n${newLine}` : newLine;
 
-    const willComplete = terminal || rec.callCount >= 2;
+    const willComplete = true;
     try {
-      const range = encodeURIComponent(`${SHEET}!${idxToCol(cols.result)}${rec.rowIndex}`);
+      const range = encodeURIComponent(`${sheetName}!${idxToCol(cols.result)}${rec.rowIndex}`);
       const res = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}?valueInputOption=USER_ENTERED`,
         {
@@ -345,7 +387,7 @@ function CallManager() {
         throw new Error(err.error?.message || '書き込み失敗');
       }
       if (willComplete) {
-        const compRange = encodeURIComponent(`${SHEET}!${idxToCol(cols.completed)}${rec.rowIndex}`);
+        const compRange = encodeURIComponent(`${sheetName}!${idxToCol(cols.completed)}${rec.rowIndex}`);
         await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${compRange}?valueInputOption=USER_ENTERED`,
           {
@@ -354,6 +396,89 @@ function CallManager() {
             body: JSON.stringify({ values: [['TRUE']] }),
           }
         );
+      }
+      // 対応チーム・対応開始日（自動）・初回対応日の書き込み
+      if (form.team && cols.team >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.team)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[form.team]] }),
+        });
+      }
+      // 対応開始日: シートに値がなければ当日日付を自動書き込み
+      if (!rec.firstResponseDate && cols.firstResponseDate >= 0) {
+        const todayISO = now.toISOString().slice(0, 10);
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.firstResponseDate)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[todayISO]] }),
+        });
+      }
+      if (form.initialResponseDate && cols.initialResponseDate >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.initialResponseDate)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[form.initialResponseDate]] }),
+        });
+      }
+      // 解約阻止日の書き込み
+      if (form.cancelStopDate && cols.cancelStopDate >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.cancelStopDate)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[form.cancelStopDate]] }),
+        });
+      }
+      // 解約処理: 対応チーム列に「解約処理」を書き込み
+      if (form.cancelProcess && cols.team >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.team)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [['解約処理']] }),
+        });
+      }
+      // 損害金見込み・着地の損害金の書き込み
+      if (form.refundAmount && cols.refundAmount >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.refundAmount)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[form.refundAmount]] }),
+        });
+      }
+      if (form.landingAmount && cols.landingAmount >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.landingAmount)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[form.landingAmount]] }),
+        });
+      }
+      // NA日時の書き込み（常に上書き）
+      if (cols.naCall >= 0) {
+        const naVal = form.naCallDate
+          ? (form.naCallTime ? `${form.naCallDate} ${form.naCallTime}` : form.naCallDate)
+          : '';
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.naCall)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[naVal]] }),
+        });
+      }
+      // 共有メモ（備考（自由記述））をリセット
+      if (cols.sharedMemo >= 0) {
+        const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.sharedMemo)}${rec.rowIndex}`);
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [['']] }),
+        });
       }
     } catch (e) {
       showToast(`エラー: ${e.message}`);
@@ -365,10 +490,15 @@ function CallManager() {
       return {
         ...r,
         callResultRaw: newRaw,
-        callCount: terminal ? r.callCount : r.callCount + 1,
-        callLogs: [...r.callLogs, { round: r.callCount + 1, result: form.result, note: form.note, date: today }]
+        callCount: (terminal || apoMiss) ? r.callCount : r.callCount + 1,
+        callLogs: [...r.callLogs, { round: r.callCount + 1, result: form.result, note: form.note, date: today }],
+        cancelStopDate: form.cancelStopDate || r.cancelStopDate,
+        team: form.cancelProcess ? '解約処理' : (form.team || r.team),
+        naCall: form.naCallDate ? (form.naCallTime ? `${form.naCallDate} ${form.naCallTime}` : form.naCallDate) : '',
+        sharedMemo: '',
       };
     }));
+    lastSubmitRef.current = Date.now(); // 登録時刻を記録
     showToast("架電結果を記録しました");
     closeModal();
   };
@@ -399,19 +529,88 @@ function CallManager() {
   };
 
   const rec = modal ? records.find(r => r.id === modal.id) : null;
+  const naCallList = records.filter(r => isApo(r) && !isTerminal(r) && !isDealDone(r));
   const tabData = [
+    { label: "アポ", count: naCallList.length },
     { label: "1回目", count: filtered(1).length },
     { label: "2回目", count: filtered(2).length },
     { label: "3回目", count: filtered(3).length },
     { label: "完了", count: completed.length },
   ];
-  const listToShow = activeTab <= 3 ? filtered(activeTab) : completed;
+  const baseList = activeTab === 1 ? naCallList : activeTab <= 4 ? filtered(activeTab - 1) : completed;
+
+  const parseDatetime = (r) => {
+    const s = `${r.date || ''} ${r.time || ''}`.trim();
+    const d = new Date(s);
+    return isNaN(d) ? new Date('9999-12-31') : d;
+  };
+
+  const handleSort = async (order) => {
+    setSortOrder(order);
+    if (activeTab !== 1) return;
+    const uncached = naCallList.filter(r => !(r.naCall in apoSortMap)).map(r => r.naCall);
+    if (uncached.length === 0) return;
+    setSortLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: `以下のNA架電の値をそれぞれ日時として解釈し、ISO 8601形式（YYYY-MM-DDTHH:mm）のJSON配列のみで返してください。解析できない場合は"9999-12-31T00:00"にしてください。他の文字は一切含めないでください。\n${uncached.map((v, i) => `${i}: ${v}`).join('\n')}` }] }),
+      });
+      const data = await res.json();
+      const parsed = JSON.parse(data.content);
+      setApoSortMap(prev => {
+        const next = { ...prev };
+        uncached.forEach((v, i) => { next[v] = parsed[i] || '9999-12-31T00:00'; });
+        return next;
+      });
+    } catch (e) { /* silent */ } finally {
+      setSortLoading(false);
+    }
+  };
+
+  const listToShow = (() => {
+    if (!sortOrder) return baseList;
+    const sorted = [...baseList];
+    if (activeTab === 1) {
+      sorted.sort((a, b) => {
+        const da = new Date(apoSortMap[a.naCall] || '9999-12-31');
+        const db = new Date(apoSortMap[b.naCall] || '9999-12-31');
+        const diff = sortOrder === 'asc' ? da - db : db - da;
+        if (diff !== 0) return diff;
+        // 同日時の場合はアポ不通回数で昇順
+        const ca = a.callLogs.filter(l => l.result === 'アポ不通').length;
+        const cb = b.callLogs.filter(l => l.result === 'アポ不通').length;
+        return ca - cb;
+      });
+    } else {
+      sorted.sort((a, b) => {
+        const da = parseDatetime(a), db = parseDatetime(b);
+        return sortOrder === 'asc' ? da - db : db - da;
+      });
+    }
+    return sorted;
+  })();
 
   // 全レコード中で名前が重複しているものをセット化
   const nameCounts = records.reduce((acc, r) => { acc[r.name] = (acc[r.name] || 0) + 1; return acc; }, {});
   const duplicateNames = new Set(Object.keys(nameCounts).filter(n => nameCounts[n] > 1));
 
-  // ─── Login Screen ───────────────────────────────────────────────────────────
+  const handleSharedMemoSave = async (r, text) => {
+    if (cols.sharedMemo < 0) return;
+    try {
+      const range = encodeURIComponent(`${sheetName}!${idxToCol(cols.sharedMemo)}${r.rowIndex}`);
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[text]] })
+      });
+      setRecords(prev => prev.map(item => item.id === r.id ? { ...item, sharedMemo: text } : item));
+    } catch (e) { console.error(e); }
+  };
+
+  // ─── ログイン画面 ──────────────────────────────────────────────────────────
+
   if (!token) {
     return (
       <div style={{ minHeight: "100vh", background: "#F8F9FA", fontFamily: "'Noto Sans JP', sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -452,8 +651,8 @@ function CallManager() {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 3, gap: 2 }}>
-            {['EAST', 'WEST'].map(r => (
-              <button key={r} onClick={() => { setRegion(r); setRecords([]); setActiveTab(1); }} style={{
+            {['EAST', 'WEST', 'ATOM'].map(r => (
+              <button key={r} onClick={() => { setRegion(r); localStorage.setItem('cm_region', r); setRecords([]); setActiveTab(1); localStorage.setItem('cm_tab', '1'); }} style={{
                 background: region === r ? "#fff" : "transparent",
                 border: "none", borderRadius: 6, padding: "4px 12px",
                 fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -471,7 +670,7 @@ function CallManager() {
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #E5E7EB", padding: "0 32px", background: "#fff" }}>
         {tabData.map((t, i) => (
-          <button key={i} onClick={() => setActiveTab(i + 1)} style={{
+          <button key={i} onClick={() => { setActiveTab(i + 1); localStorage.setItem('cm_tab', String(i + 1)); setSortOrder(null); setSortOpen(false); loadData(); }} style={{
             background: "none", border: "none", cursor: "pointer",
             padding: "14px 24px", fontSize: 14, fontWeight: 500,
             color: activeTab === i + 1 ? "#4F46E5" : "#6B7280",
@@ -490,6 +689,28 @@ function CallManager() {
 
       {/* List */}
       <div style={{ padding: "24px 32px", maxWidth: 900, margin: "0 auto" }}>
+        {/* 並び替えUI */}
+        {!loading && !error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            {!sortOpen ? (
+              <button onClick={() => setSortOpen(true)} style={{ background: "linear-gradient(135deg,#4F46E5,#7C3AED)", border: "none", borderRadius: 8, padding: "5px 14px", fontSize: 13, cursor: "pointer", color: "#fff", fontWeight: 600 }}>
+                並び替え✨
+              </button>
+            ) : (
+              <>
+                <span style={{ fontSize: 13, color: "#4F46E5", fontWeight: 600, marginRight: 4 }}>並び替え✨</span>
+                <button onClick={() => handleSort('asc')} style={{ background: sortOrder === 'asc' ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#EEF2FF", border: `1px solid ${sortOrder === 'asc' ? 'transparent' : '#C7D2FE'}`, borderRadius: 8, padding: "5px 14px", fontSize: 13, cursor: "pointer", color: sortOrder === 'asc' ? "#fff" : "#4F46E5", fontWeight: 600 }}>
+                  昇順▲
+                </button>
+                <button onClick={() => handleSort('desc')} style={{ background: sortOrder === 'desc' ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : "#EEF2FF", border: `1px solid ${sortOrder === 'desc' ? 'transparent' : '#C7D2FE'}`, borderRadius: 8, padding: "5px 14px", fontSize: 13, cursor: "pointer", color: sortOrder === 'desc' ? "#fff" : "#4F46E5", fontWeight: 600 }}>
+                  降順▼
+                </button>
+                <button onClick={() => { setSortOpen(false); setSortOrder(null); }} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#9CA3AF" }}>✕</button>
+                {sortLoading && <span style={{ fontSize: 12, color: "#6B7280" }}>AI解析中...</span>}
+              </>
+            )}
+          </div>
+        )}
         {loading ? (
           <div style={{ textAlign: "center", padding: "60px 0", color: "#6B7280" }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
@@ -520,14 +741,17 @@ function CallManager() {
               onMouseEnter={e => e.currentTarget.style.borderColor = isDup ? "#F87171" : "#A5B4FC"}
               onMouseLeave={e => e.currentTarget.style.borderColor = isDup ? "#FCA5A5" : "#E5E7EB"}
             >
-              <div style={{
-                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                background: r.callCount === 0 ? "linear-gradient(135deg,#DBEAFE,#BFDBFE)" : r.callCount === 1 ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "linear-gradient(135deg,#D1FAE5,#A7F3D0)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 15, fontWeight: 700, color: r.callCount === 0 ? "#1D4ED8" : r.callCount === 1 ? "#6D28D9" : "#065F46"
-              }}>
-                {r.callCount + 1}回
-              </div>
+              {(() => {
+                const apoMissCount = activeTab === 1 ? r.callLogs.filter(l => l.result === 'アポ不通').length : r.callCount;
+                const dispCount = activeTab === 1 ? apoMissCount : r.callCount;
+                const bg = dispCount === 0 ? "linear-gradient(135deg,#DBEAFE,#BFDBFE)" : dispCount === 1 ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "linear-gradient(135deg,#D1FAE5,#A7F3D0)";
+                const col = dispCount === 0 ? "#1D4ED8" : dispCount === 1 ? "#6D28D9" : "#065F46";
+                return (
+                  <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: col }}>
+                    {`${dispCount + 1}回`}
+                  </div>
+                );
+              })()}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                   <span style={{ fontSize: 16, fontWeight: 700 }}>{r.name}</span>
@@ -544,6 +768,27 @@ function CallManager() {
                   <span style={{ fontSize: 11, borderRadius: 6, padding: "2px 8px", background: badge.bg, color: badge.text }}>{r.content}</span>
                 </div>
                 <div style={{ fontSize: 13, color: "#6B7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.memo}</div>
+                
+                {/* 共有メモ（スプレッドシート保存） */}
+                <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                  <input
+                    key={r.id + (r.sharedMemo || '')}
+                    defaultValue={r.sharedMemo || ''}
+                    onBlur={e => { if(e.target.value !== (r.sharedMemo || '')) handleSharedMemoSave(r, e.target.value); }}
+                    placeholder="共有メモ（全員に見れます・自動保存）"
+                    style={{
+                      width: "100%", background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 6,
+                      padding: "4px 8px", fontSize: 11, color: "#0369A1", outline: "none"
+                    }}
+                  />
+                </div>
+
+                {isApo(r) && (
+                  <div style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 6, padding: "2px 8px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#C2410C" }}>NA架電</span>
+                    <span style={{ fontSize: 12, color: "#9A3412" }}>{r.naCall}</span>
+                  </div>
+                )}
                 {r.callLogs.length > 0 && (
                   <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {r.callLogs.map((l, idx) => (
@@ -555,8 +800,8 @@ function CallManager() {
                 )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
-                <span style={{ fontSize: 12, color: "#9CA3AF" }}>{r.date}</span>
-                {activeTab <= 3 && (
+                <span style={{ fontSize: 12, color: "#9CA3AF" }}>{r.date}{r.time ? ` ${r.time}` : ''}</span>
+                {activeTab <= 4 && (
                   <button onClick={() => openModal(r.id)} style={{
                     background: "linear-gradient(135deg, #4F46E5, #7C3AED)", border: "none", cursor: "pointer",
                     color: "#fff", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600,
@@ -616,6 +861,21 @@ function CallManager() {
                   style={{ ...inputStyle, resize: "none" }} />
               </div>
 
+              {/* NA日時登録 */}
+              <div style={sectionStyle}>
+                <div style={sectionTitleStyle}>NA日時登録</div>
+                <div style={rowStyle}>
+                  <div>
+                    <label style={labelStyle}>日付</label>
+                    <input type="date" value={form.naCallDate} onChange={e => setField("naCallDate", e.target.value)} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>時間</label>
+                    <input type="time" value={form.naCallTime} onChange={e => setField("naCallTime", e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
               {/* 対応情報 */}
               <div style={sectionStyle}>
                 <div style={sectionTitleStyle}>対応情報</div>
@@ -626,8 +886,11 @@ function CallManager() {
                   </div>
                   <div>
                     <label style={labelStyle}>初回対応日</label>
-                    <input type="date" value={form.firstResponseDate} onChange={e => setField("firstResponseDate", e.target.value)} style={inputStyle} />
+                    <input type="date" value={form.initialResponseDate} onChange={e => setField("initialResponseDate", e.target.value)} style={inputStyle} />
                   </div>
+                </div>
+                <div style={{ ...rowStyle, gridTemplateColumns: "1fr", marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: "#9CA3AF" }}>※対応開始日は登録時に自動で当日日付が入ります（未記入の場合のみ）</div>
                 </div>
                 <div style={rowStyle}>
                   <div>
@@ -649,18 +912,26 @@ function CallManager() {
                     <label style={labelStyle}>解約阻止日</label>
                     <input type="date" value={form.cancelStopDate} onChange={e => setField("cancelStopDate", e.target.value)} style={inputStyle} />
                   </div>
-                  <div>
-                    <label style={labelStyle}>解約日</label>
-                    <input type="date" value={form.cancelDate} onChange={e => setField("cancelDate", e.target.value)} style={inputStyle} />
+                  <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                    <label style={labelStyle}>解約処理</label>
+                    <button type="button" onClick={() => setField("cancelProcess", !form.cancelProcess)} style={{
+                      background: form.cancelProcess ? "linear-gradient(135deg,#EF4444,#DC2626)" : "#F9FAFB",
+                      border: `1px solid ${form.cancelProcess ? "#EF4444" : "#E5E7EB"}`,
+                      color: form.cancelProcess ? "#fff" : "#374151",
+                      borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer",
+                      fontWeight: form.cancelProcess ? 700 : 500, transition: "all 0.15s", width: "100%",
+                    }}>
+                      {form.cancelProcess ? "解約処理あり ✓" : "解約処理なし"}
+                    </button>
                   </div>
                 </div>
                 <div style={rowStyle}>
                   <div>
-                    <label style={labelStyle}>解約時返金額</label>
+                    <label style={labelStyle}>損害金見込み</label>
                     <input type="number" value={form.refundAmount} onChange={e => setField("refundAmount", e.target.value)} style={inputStyle} placeholder="0" />
                   </div>
                   <div>
-                    <label style={labelStyle}>着地金額</label>
+                    <label style={labelStyle}>着地の損害金（解約手数料除く）</label>
                     <input type="number" value={form.landingAmount} onChange={e => setField("landingAmount", e.target.value)} style={inputStyle} placeholder="0" />
                   </div>
                 </div>
@@ -737,33 +1008,6 @@ function CallManager() {
                 )}
               </div>
 
-              {/* お断り */}
-              <div style={sectionStyle}>
-                <div style={sectionTitleStyle}>お断り</div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={labelStyle}>お断り施術メニュー</label>
-                  <input value={form.refusalMenu} onChange={e => setField("refusalMenu", e.target.value)} style={inputStyle} placeholder="施術名" />
-                </div>
-                <div style={rowStyle}>
-                  <div>
-                    <label style={labelStyle}>お断り理由（回数）</label>
-                    <input value={form.refusalReasonCount} onChange={e => setField("refusalReasonCount", e.target.value)} style={inputStyle} placeholder="" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>お断り理由サブ</label>
-                    <input value={form.refusalReasonSub} onChange={e => setField("refusalReasonSub", e.target.value)} style={inputStyle} placeholder="" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 備考 */}
-              <div style={sectionStyle}>
-                <div style={sectionTitleStyle}>備考（自由記述）</div>
-                <textarea value={form.freeNotes} onChange={e => setField("freeNotes", e.target.value)}
-                  rows={3} placeholder="自由記述..."
-                  style={{ ...inputStyle, resize: "none" }} />
-              </div>
-
             </div>
 
             {/* Modal Footer */}
@@ -825,7 +1069,7 @@ function CallManager() {
         {chatOpen && (
           <div style={{ width: 360, height: 480, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 20, boxShadow: "0 20px 60px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg,#4F46E5,#7C3AED)" }}>
-              <div style={{ fontSize: 18 }}>🤖</div>
+              <div style={{ fontSize: 18 }}>✨</div>
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>仕様AIアシスタント</div>
               <button onClick={() => setChatOpen(false)} style={{ marginLeft: "auto", background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 16 }}>✕</button>
             </div>
@@ -875,7 +1119,7 @@ function CallManager() {
         }}
           onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
           onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
-        >🤖</button>
+        >✨</button>
       </div>
     </div>
   );

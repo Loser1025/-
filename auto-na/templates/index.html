@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>対応・NA 一括登録ツール</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        :root {
+            --consulter-bg: #aad6ec;
+            --consulter-sub: #d1e1ec;
+        }
+        body { background: #f8f9fc; font-size: 14px; }
+        .consulter-color { background-color: var(--consulter-bg) !important; }
+        .consulter-sub { background-color: var(--consulter-sub); }
+
+        .card { border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 16px; }
+        .card-header { padding: 10px 16px; font-weight: bold; }
+
+        .table-input { width: 100%; border-collapse: collapse; }
+        .table-input th {
+            background: var(--consulter-sub);
+            padding: 7px 10px;
+            font-weight: bold;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            white-space: nowrap;
+        }
+        .table-input td {
+            padding: 7px 10px;
+            border: 1px solid #ccc;
+            vertical-align: middle;
+        }
+
+        .badge-auto {
+            background: #17a2b8;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 4px;
+        }
+
+        /* ログエリア */
+        #log-area {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 12px;
+            height: 260px;
+            overflow-y: auto;
+            border-radius: 4px;
+        }
+        #log-area .log-ok   { color: #4ec9b0; }
+        #log-area .log-err  { color: #f44747; }
+        #log-area .log-warn { color: #dcdcaa; }
+        #log-area .log-info { color: #9cdcfe; }
+
+        .progress { height: 22px; border-radius: 4px; }
+        .progress-bar { font-size: 13px; line-height: 22px; }
+
+        /* ボタン */
+        .btn-run  { background: #1c6ea4; color: #fff; font-weight: bold; }
+        .btn-run:hover { background: #155080; color: #fff; }
+        .btn-stop { background: #c0392b; color: #fff; font-weight: bold; }
+
+        .form-control-sm { font-size: 13px; }
+        select.form-control { font-size: 13px; }
+
+        #csv-preview {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 8px 12px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 12px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid px-4 py-3" style="max-width:960px;">
+
+    <h4 class="mb-3">
+        <i class="fas fa-robot mr-2" style="color:#1c6ea4;"></i>
+        対応・NA 一括登録ツール
+    </h4>
+
+    <!-- ログイン設定 -->
+    <div class="card">
+        <div class="card-header consulter-color d-flex align-items-center">
+            <i class="fas fa-key mr-2"></i> ログイン設定
+            <button class="btn btn-sm btn-link ml-auto" type="button" data-toggle="collapse" data-target="#login-section">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+        </div>
+        <div class="collapse show" id="login-section">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label class="section-title">ログインID</label>
+                        <input type="text" id="login_email" class="form-control form-control-sm" placeholder="ログインID">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="section-title">パスワード</label>
+                        <input type="password" id="login_password" class="form-control form-control-sm" placeholder="パスワード">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <small class="text-muted">※ 設定は自動保存されます</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NA登録設定（オリジナルフォームと同デザイン） -->
+    <div class="card">
+        <div class="card-header text-center consulter-color">
+            <h5 class="mb-0 font-weight-bold">対応・NA登録（一括設定）</h5>
+            <div class="mt-2">
+                <div class="form-check d-inline-flex align-items-center">
+                    <input class="form-check-input mr-2" type="checkbox" id="inherit_previous" checked>
+                    <label class="form-check-label font-weight-normal" for="inherit_previous" style="font-size:13px;">
+                        <i class="fas fa-history mr-1"></i>
+                        空欄フィールドは各IDの<strong>直前の登録内容を自動継承</strong>
+                        <span class="badge badge-light ml-1" style="font-size:11px;">対応者・ステータス・受発信・通信手段・理由・NA内容</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-2">
+            <table class="table-input mb-2">
+                <!-- Row 1: ヘッダー -->
+                <tr>
+                    <th style="width:33%">対応日時</th>
+                    <th style="width:33%">対応者</th>
+                    <th style="width:34%">対応中ステータス</th>
+                </tr>
+                <!-- Row 2: 入力 -->
+                <tr>
+                    <td>
+                        <span class="badge-auto"><i class="fas fa-clock mr-1"></i>実行当日の現在時刻を自動入力</span>
+                    </td>
+                    <td>
+                        <select id="user_id" class="form-control form-control-sm">
+                            <option value="">（空欄→前回値を継承）</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select id="mst_contact_status_id" class="form-control form-control-sm">
+                            <option value="">（空欄→前回値を継承）</option>
+                        </select>
+                    </td>
+                </tr>
+                <!-- Row 3: ヘッダー -->
+                <tr>
+                    <th>受発信</th>
+                    <th>通信手段</th>
+                    <th>理由</th>
+                </tr>
+                <!-- Row 4: 入力 -->
+                <tr>
+                    <td>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="contact_direction_type" id="cdt0" value="">
+                            <label class="form-check-label" for="cdt0">（指定なし）</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="contact_direction_type" id="cdt1" value="1">
+                            <label class="form-check-label" for="cdt1">未選択</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="contact_direction_type" id="cdt2" value="2">
+                            <label class="form-check-label" for="cdt2">受信</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="contact_direction_type" id="cdt3" value="3">
+                            <label class="form-check-label" for="cdt3">発信</label>
+                        </div>
+                    </td>
+                    <td>
+                        <select id="contact_tool_type" class="form-control form-control-sm">
+                            <option value="">（空欄→前回値を継承）</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select id="reason" class="form-control form-control-sm">
+                            <option value="">（空欄→前回値を継承）</option>
+                        </select>
+                    </td>
+                </tr>
+                <!-- Row 5: ヘッダー -->
+                <tr>
+                    <th>NA日時</th>
+                    <th>NA内容</th>
+                    <th>不通フラグ</th>
+                </tr>
+                <!-- Row 6: 入力 -->
+                <tr>
+                    <td>
+                        <div class="row no-gutters">
+                            <div class="col-7 pr-1">
+                                <input type="text" id="next_action_date" class="form-control form-control-sm" placeholder="YYYY/MM/DD">
+                            </div>
+                            <div class="col-5">
+                                <input type="text" id="next_action_time" class="form-control form-control-sm" placeholder="HH:MM">
+                            </div>
+                        </div>
+                        <small class="text-muted">空欄の場合は入力しません</small>
+                    </td>
+                    <td>
+                        <select id="mst_consulter_next_action_id" class="form-control form-control-sm">
+                            <option value="">（空欄→前回値を継承）</option>
+                        </select>
+                    </td>
+                    <td>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is_absent">
+                            <label class="form-check-label" for="is_absent">不通</label>
+                        </div>
+                    </td>
+                </tr>
+                <!-- Row 7: 備考 -->
+                <tr>
+                    <th colspan="3">備考</th>
+                </tr>
+                <tr>
+                    <td colspan="3">
+                        <textarea id="contact_history_note" class="form-control" rows="4"
+                            placeholder="全案件に共通で入力する備考内容を入力してください（空欄の場合は入力しません）"></textarea>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- CSV読み込み -->
+    <div class="card">
+        <div class="card-header consulter-color">
+            <i class="fas fa-file-csv mr-2"></i> IDリスト（CSV）
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-5">
+                    <div class="custom-file">
+                        <input type="file" class="custom-file-input" id="csv-file" accept=".csv,.txt">
+                        <label class="custom-file-label" for="csv-file">CSVファイルを選択...</label>
+                    </div>
+                    <small class="text-muted mt-1 d-block">
+                        みつ葉の「相談者一覧」CSVをそのまま読み込み可（UTF-8 / Shift-JIS 自動判定）
+                    </small>
+                </div>
+                <div class="col-md-7">
+                    <div id="csv-preview" class="mt-2 mt-md-0">
+                        <span class="text-muted">ファイルを選択するとIDリストが表示されます</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-2">
+                <span id="csv-count" class="badge badge-secondary">0 件</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 実行コントロール -->
+    <div class="card">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-2 mb-md-0">
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar bg-info" role="progressbar" style="width:0%">0 / 0</div>
+                    </div>
+                </div>
+                <div class="col-md-6 text-right">
+                    <button id="btn-run" class="btn btn-run btn-lg mr-2" onclick="startRun()">
+                        <i class="fas fa-play mr-1"></i> 実行開始
+                    </button>
+                    <button id="btn-stop" class="btn btn-stop btn-lg" onclick="stopRun()" disabled>
+                        <i class="fas fa-stop mr-1"></i> 停止
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 進捗ログ -->
+    <div class="card">
+        <div class="card-header consulter-color d-flex align-items-center">
+            <i class="fas fa-terminal mr-2"></i> 進捗ログ
+            <button class="btn btn-sm btn-outline-secondary ml-auto" onclick="document.getElementById('log-area').innerHTML=''">クリア</button>
+        </div>
+        <div class="card-body p-2">
+            <div id="log-area"></div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
+<script>
+
+// ────────────────────────────────────────
+// ドロップダウンデータ
+// ────────────────────────────────────────
+const OPTIONS = {
+    user_id: [
+        ["2001594","和田 浩典"],["2001082","島田 雄左"],["2001083","三ヶ㞍 勇輝"],["2001233","三ヶ㞍 勇輝"],
+        ["2001084","鶴澤 大輔"],["2001108","宮城 誠"],["2001111","岩間 俊樹"],["2001141","牛山 定彦"],
+        ["2001146","渡邊 倫子"],["2001175","卯都木 大"],["2001180","高岡 宏"],["2001189","齋藤 崇幸"],
+        ["2001202","小山 菜々"],["2001239","中原 亮"],["2001351","杉浦 尚武"],["2001240","中町 遥"],
+        ["2001352","瀧澤 和貴"],["2001310","尾﨑 友美"],["2001424","佐藤 和雄"],["2001476","治久丸 啓太"],
+        ["2001528","増澤 千代"],["2001529","神 達也"],["2001552","佐野 光"],["2001571","佐々木 孝洋"],
+        ["2001574","山重 和信"],["2001575","吉村 文菜"],["2001593","三浦 和弥"],["2002014","望月 純"],
+        ["2001628","圓谷 修宏"],["2001695","山本 浩之"],["2001701","大澤 愛歌"],["2001737","志水 友行"],
+        ["2001738","田嶋 剛"],["2001805","矢嶋 あゆみ"],["2001745","井町 雅一"],["2001812","篠崎 雅一"],
+        ["2001828","渡邉 瑞人"],["2001833","芦澤 明子"],["2001845","阿形 岳志"],["2001936","須永 哲次"],
+        ["2001793","増岡 隆夫"],["2001943","南竹 素聡"],["2002130","佐々木 征和"],["2002106","大橋 大武"],
+        ["2002107","根本 和音"],["2001086","松島 俊介"],["2001104","高橋 智奈"],["2001112","髙橋 祥一朗"],
+        ["2001145","金成 朋恵"],["2001169","仲松 菜奈子"],["2001170","副島 翔太"],["2001194","村上 進一"],
+        ["2001241","河村 莉子"],["2001245","中村 真友子"],["2001246","和久井 尚"],["2001247","保坂 勇太"],
+        ["2001248","広瀬 貴大"],["2001252","島崎 愛"],["2001277","齊藤 史也"],["2001291","天笠 芹菜"],
+        ["2001292","林 聡美"],["2001293","宿南 彩子"],["2001295","福田 美佐"],["2001298","宇野 優萌"],
+        ["2001299","藤野 真由美"],["2001301","比企 康子"],["2001302","武藤 佳菜子"],["2001312","秋山 佑衣"],
+        ["2001317","糟谷 優"],["2001178","田中 晴香"],["2001337","髙村 直樹"],["2001338","横山 舞乃"],
+        ["2001345","岡口 知生"],["2001364","熊手 夢見"],["2001366","和田 牧夫"],["2001367","内田 香織"],
+        ["2001382","中山 雄貴"],["2001396","和田 有可"],["2001397","高橋 優斗"],["2001402","森田 菜摘"],
+        ["2001405","内山 小夜子"],["2001413","常盤 奈美"],["2001420","林 孝一郎"],["2001433","染井 菜沙"],
+        ["2001432","廣田 珠輝"],["2001458","山田 凛音"],["2001470","平松 優希"],["2001474","橋本 晴海"],
+        ["2001490","川本 さつき"],["2001491","白窪 早"],["2001493","綿引 一馬"],["2001494","奥田 沙貴"],
+        ["2001501","人見 真子"],["2001504","松戸 有彩"],["2001508","水谷 史保"],["2001509","吉松 舞香"],
+        ["2001519","竹村 良太"],["2001520","仲地 真衣子"],["2001522","安藤 歩"],["2001530","宮下 真衣子"],
+        ["2001551","田中 望帆子"],["2001555","河合 萌夏"],["2001563","関澤 優"],["2001564","高柳 愛理"],
+        ["2001565","三村 なつみ"],["2001572","川崎 真奈美"],["2001573","西山 幸広"],["2001576","升水 太一"],
+        ["2001584","八木 ひとみ"],["2001579","近藤 優香"],["2001585","大村 遥香"],["2001586","杉原 康代"],
+        ["2001668","成田 みどり"],["2001587","佐藤 更紗"],["2001589","山崎 詠万"],["2001590","中田 静里奈"],
+        ["2001591","諸石 美幸"],["2001596","アコム 株式会社"],["2001234","オートコール （自動発信）"],
+        ["2001601","返済管理 チーム"],["2001602","督促 部"],["2001603","精算 チーム"],
+        ["2001625","山田 れな"],["2001631","阿部 大希"],["2001635","北村 霞織"],["2001636","横尾 綾奈"],
+        ["2001634","米倉 理紗"],["2001638","半田 暁美"],["2001642","山中 輝"],["2001644","中野 修作"],
+        ["2001650","宮窪 七海"],["2001653","渡辺 真由"],["2001654","石井 紗英"],["2001655","鈴木 ひなた"],
+        ["2001656","高倉 沙也加"],["2001657","伊藤 亜加音"],["2001658","阿尻 茜"],["2001660","今泉 響"],
+        ["2001664","相川 翔"],["2001665","鈴木 亜弥"],["2001666","森田 健太"],["2001667","小泉 もえこ"],
+        ["2001672","河合 麻里奈"],["2001183","調査 班"],["2001673","成田 朱里"],["2001674","筒井 実伽里"],
+        ["2001680","渡邊 理沙"],["2001678","小杉 紅葉"],["2001679","加地 一晴"],["2001685","土信田 ほのか"],
+        ["2001702","岩佐 彩子"],["2001703","上ノ坊 友紀"],["2001704","松元 みゆう"],["2001705","吉田 冴香"],
+        ["2001192","山下 修平"],["2001087","伊藤 崇"],["2001211","和解 班"],["2001088","山下 啓臣"],
+        ["2001132","米良 拓馬"],["2001208","中村 美月"],["2001217","白垣 充崇"],["2001309","池田 祥子"],
+        ["2001335","松田 佳楠子"],["2001330","那須 友明"],["2001346","ジィエムピタヤヌワット 恵"],
+        ["2001347","播磨 寿里華"],["2001212","経理 班"],["2001348","大庭 真理"],["2001349","松田 翼"],
+        ["2001369","村里 祐理"],["2001398","福岡 ヘルプ1"],["2001401","山野 雄太郎"],["2001416","辻 日菜子"],
+        ["2001429","近藤 きよら"],["2001430","守田 有子"],["2001467","八ツ繁 姫乃"],["2001469","堂領 美来"],
+        ["2001473","土屋 要"],["2001496","広政 加純"],["2001527","進 由菜"],["2001477","中村 峻"],
+        ["2001581","尾田 佳那子"],["2001588","遠藤 大陸"],["2001659","濱﨑 美衣"],["2001810","村上 雄大"],
+        ["2001836","坂本 悠"],["2001868","鶴田 愛菜"],["2001939","井上 美有"],["2001875","Python 自動登録"],
+        ["2001877","中西 結香"],["2001890","事件登録 チーム"],["2001892","原 愛理紗"],["2001937","森脇 彩乃"],
+        ["2001923","入金管理 チーム"],["2001938","貞松 玲奈"],["2002128","顧客支援 チーム"],
+        ["2001497","NCS ヘルプ1"],["2001498","NCS ヘルプ2"],["2001499","NCS ヘルプ3"],
+        ["2001500","NCS ヘルプ4"],["2001502","NCS ヘルプ5"],["2001503","NCS ヘルプ6"],
+        ["2001951","NCS ヘルプ7"],["2001952","NCS ヘルプ8"],["2001953","NCS ヘルプ9"],["2001954","NCS ヘルプ10"]
+    ],
+    mst_contact_status_id: [
+        ["101","未通話"],["102","初期ヒアリング"],["103","提案中"],["104","面談予約"],
+        ["105","契約書送信済み"],["106","書説済／返送待ち"],["107","書戻り"],
+        ["123","面談設定中"],["120","面談設定保留"],["108","面談設定済み"],["109","面談リスケ中"],
+        ["110","面談後保留"],["111","面談後否決"],["112","受任"],["113","終了"],
+        ["122","提案終了"],["114","終了(架電禁止)"],["115","紹介中"],["116","紹介面談予約"],
+        ["117","紹介書戻り"],["118","紹介受任"],["119","相談者化"]
+    ],
+    contact_tool_type: [
+        ["1","(未選択)"],["2","電話"],["11","電話＋SMS"],["4","SMS"],["12","SMS(一斉)"],
+        ["3","メール"],["5","面談"],["6","LINE"],["7","書類発送"],["8","秘書"],["9","FAX"],["10","その他"]
+    ],
+    reason: [
+        ["101","(未通話)"],["151","(初期ヒアリング)"],["102","(面談予約)"],["103","(書戻り)"],
+        ["150","(面談設定保留)"],["104","(受任)"],["137","サンクス返信あり"],
+        ["138","シミュ初回SMS送信"],["139","シミュ初回SMS返信あり"],["143","通話アポ獲得"],
+        ["161","フォーム予約"],["132","連絡先不備・間違い電話"],["146","初期ヒア前キャンセル"],
+        ["162","アンケート・ポイント"],["147","外国人全般"],["152","債務整理以外の反響"],
+        ["105","質問のみ(依頼意志なし)"],["111","生活保護受給者"],["153","案件化不可"],
+        ["154","短期・少額借入"],["113","自己解決可能"],["145","代理権越え・法的相当"],
+        ["155","任意整理不可業者"],["156","デメリット懸念"],["157","積立・返済不能"],
+        ["158","第三者相談中"],["159","相談者検討中"],["121","遠方で面談できず"],
+        ["125","債務整理拒否(理由不明)"],["160","提案後他社依頼"],["118","苦情等"]
+    ],
+    mst_consulter_next_action_id: [
+        ["117","(新規)日時指定架電"],["101","フォロー１"],["116","提案"],["119","メール送信"],
+        ["120","シミュ初回SMS送信"],["121","SMS送信"],["118","(既存)日時指定架電"],
+        ["102","フォロー２"],["215","提案アポ1"],["216","提案アポ2"],["103","フォロー３"],
+        ["104","フォロー４"],["105","フォロー５"],["106","フォロー６"],["107","フォロー７"],
+        ["108","フォロー８"],["109","フォロー９"],["110","フォロー１０"],["111","フォロー１１"],
+        ["112","フォロー１２"],["113","フォロー１３"],["114","フォロー１４"],["115","フォロー１５"],
+        ["152","AC2"],["153","AC3"],["154","AC4"],["155","AC5"],["156","AC6"],
+        ["157","AC7"],["158","AC8"],["159","AC9"],["174","AC10"],
+        ["122","契約書等送信"],["130","身分証等督促１"],["131","身分証等督促２"],
+        ["132","身分証等督促３"],["133","身分証等督促４"],["134","身分証等督促５"],
+        ["135","身分証等督促６"],["136","身分証等督促最後"],
+        ["137","面談予約後フォロー"],["123","書類督促１"],["124","書類督促２"],
+        ["125","書類督促３"],["126","書類督促４"],["127","書類督促５"],
+        ["128","書類督促６"],["129","書類督促最後"],
+        ["138","書類戻り後フォロー１"],["139","書類戻り後フォロー２"],["140","書類戻り後フォロー３"],
+        ["141","書類戻り後フォロー４"],["142","書類戻り後フォロー５"],["143","書類戻り後フォロー６"],
+        ["144","書類戻り後フォロー最後"],["145","面談設定"],["146","面談日前連絡"],
+        ["147","来所面談"],["148","オンライン動画面談"],["149","電話面談"],
+        ["171","電話面談(日時指定あり)"],["170","法的チーム対応１"],["175","掘り起し"],
+        ["151","対応不要"],["176","エラー確認"],["177","SMS送信(優先)"],
+        ["178","LINE通話まち"],["182","掘り起し②"],["183","掘り起し③"],["185","LINE送信"],
+        ["189","既存フォロー１"],["190","既存フォロー２"],["191","既存フォロー３"],
+        ["192","既存フォロー４"],["193","既存フォロー５"],["194","既存フォロー６"],
+        ["198","提案フォロー１"],["199","提案フォロー２"],["200","提案フォロー３"],
+        ["213","提案（日時指定架電）"]
+    ]
+};
+
+// ────────────────────────────────────────
+// セレクトボックスを構築
+// ────────────────────────────────────────
+function buildSelects() {
+    Object.keys(OPTIONS).forEach(key => {
+        const sel = document.getElementById(key);
+        if (!sel) return;
+        OPTIONS[key].forEach(([val, label]) => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = label;
+            sel.appendChild(opt);
+        });
+    });
+}
+
+// ────────────────────────────────────────
+// 設定の保存・復元
+// ────────────────────────────────────────
+const savedConfig = {{ config | safe }};
+
+function loadConfig(cfg) {
+    if (!cfg || Object.keys(cfg).length === 0) return;
+    ['login_email','login_password','user_id','mst_contact_status_id',
+     'contact_tool_type','reason','mst_consulter_next_action_id',
+     'next_action_date','next_action_time','contact_history_note'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && cfg[id] !== undefined) el.value = cfg[id];
+    });
+    if (cfg.contact_direction_type !== undefined) {
+        const r = document.querySelector(`input[name="contact_direction_type"][value="${cfg.contact_direction_type}"]`);
+        if (r) r.checked = true;
+    }
+    if (cfg.is_absent) document.getElementById('is_absent').checked = true;
+    const inhEl = document.getElementById('inherit_previous');
+    if (inhEl && cfg.inherit_previous !== undefined) inhEl.checked = cfg.inherit_previous;
+}
+
+function getConfig() {
+    const cdt = document.querySelector('input[name="contact_direction_type"]:checked');
+    return {
+        login_email:                  document.getElementById('login_email').value,
+        login_password:               document.getElementById('login_password').value,
+        user_id:                      document.getElementById('user_id').value,
+        mst_contact_status_id:        document.getElementById('mst_contact_status_id').value,
+        contact_direction_type:       cdt ? cdt.value : '',
+        contact_tool_type:            document.getElementById('contact_tool_type').value,
+        reason:                       document.getElementById('reason').value,
+        next_action_date:             document.getElementById('next_action_date').value,
+        next_action_time:             document.getElementById('next_action_time').value,
+        mst_consulter_next_action_id: document.getElementById('mst_consulter_next_action_id').value,
+        is_absent:                    document.getElementById('is_absent').checked,
+        contact_history_note:         document.getElementById('contact_history_note').value,
+        inherit_previous:             document.getElementById('inherit_previous').checked,
+    };
+}
+
+// ────────────────────────────────────────
+// CSV読み込み
+// ────────────────────────────────────────
+let csvIds = [];
+
+function parseCSV(text) {
+    csvIds = [];
+    const preview = document.getElementById('csv-preview');
+    preview.innerHTML = '';
+
+    const lines = text.split(/\r?\n/);
+    let idColIndex = 0;  // デフォルト: 1列目
+
+    lines.forEach((line, idx) => {
+        if (!line.trim()) return;
+
+        // ヘッダー行の検出: "相談者ID" という文字列を含む場合
+        if (idx === 0 || line.includes('相談者ID')) {
+            const headers = line.split(',');
+            const found = headers.findIndex(h => h.replace(/"/g, '').trim() === '相談者ID');
+            if (found >= 0) idColIndex = found;
+            return;  // ヘッダー行はスキップ
+        }
+
+        // データ行: 行頭が5〜7桁の数字で始まる行のみ対象
+        // （引用符内の改行による断片行・本文行を除外）
+        const match = line.match(/^"?(\d{5,7})"?,/);
+        if (!match) return;
+
+        const id = match[1];
+        csvIds.push(id);
+        const span = document.createElement('span');
+        span.className = 'badge badge-light border mr-1 mb-1';
+        span.textContent = id;
+        preview.appendChild(span);
+    });
+
+    document.getElementById('csv-count').textContent = csvIds.length + ' 件';
+    document.getElementById('csv-count').className = 'badge badge-' + (csvIds.length > 0 ? 'primary' : 'secondary');
+}
+
+document.getElementById('csv-file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.querySelector('.custom-file-label').textContent = file.name;
+
+    // UTF-8で試みる
+    const readerUtf8 = new FileReader();
+    readerUtf8.onload = function(ev) {
+        const text = ev.target.result;
+        // 文字化けチェック: 置換文字(U+FFFD)が多ければShift-JISとみなす
+        const garbled = (text.match(/\ufffd/g) || []).length;
+        if (garbled > 5) {
+            // Shift-JISで再読込
+            const readerSjis = new FileReader();
+            readerSjis.onload = function(ev2) { parseCSV(ev2.target.result); };
+            readerSjis.readAsText(file, 'Shift-JIS');
+        } else {
+            parseCSV(text);
+        }
+    };
+    readerUtf8.readAsText(file, 'UTF-8');
+});
+
+// ────────────────────────────────────────
+// 実行 / 停止
+// ────────────────────────────────────────
+function startRun() {
+    if (csvIds.length === 0) {
+        alert('CSVファイルを読み込んでIDリストを設定してください。');
+        return;
+    }
+    const config = getConfig();
+    if (!config.login_email || !config.login_password) {
+        alert('ログイン設定（メールアドレス・パスワード）を入力してください。');
+        return;
+    }
+
+    fetch('/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({config, ids: csvIds})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert(d.error); return; }
+        document.getElementById('btn-run').disabled = true;
+        document.getElementById('btn-stop').disabled = false;
+        startPolling();
+    });
+}
+
+function stopRun() {
+    fetch('/stop', {method: 'POST'});
+}
+
+// ────────────────────────────────────────
+// ポーリングでステータス更新
+// ────────────────────────────────────────
+let pollTimer = null;
+let lastLogCount = 0;
+
+function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    lastLogCount = 0;
+    pollTimer = setInterval(pollStatus, 800);
+}
+
+function pollStatus() {
+    fetch('/status').then(r => r.json()).then(d => {
+        // プログレスバー更新
+        const pct = d.total > 0 ? Math.round(d.progress / d.total * 100) : 0;
+        const bar = document.getElementById('progress-bar');
+        bar.style.width = pct + '%';
+        bar.textContent = d.progress + ' / ' + d.total;
+        bar.className = 'progress-bar ' + (d.running ? 'bg-info progress-bar-striped progress-bar-animated' : (pct === 100 ? 'bg-success' : 'bg-warning'));
+
+        // ログ追記
+        if (d.log && d.log.length > lastLogCount) {
+            const area = document.getElementById('log-area');
+            for (let i = lastLogCount; i < d.log.length; i++) {
+                const msg = d.log[i];
+                const line = document.createElement('div');
+                if (msg.includes('✓'))       line.className = 'log-ok';
+                else if (msg.includes('❌')) line.className = 'log-err';
+                else if (msg.includes('⚠'))  line.className = 'log-warn';
+                else                          line.className = 'log-info';
+                line.textContent = msg;
+                area.appendChild(line);
+            }
+            area.scrollTop = area.scrollHeight;
+            lastLogCount = d.log.length;
+        }
+
+        // 完了時
+        if (!d.running && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            document.getElementById('btn-run').disabled = false;
+            document.getElementById('btn-stop').disabled = true;
+        }
+    });
+}
+
+// ────────────────────────────────────────
+// 初期化
+// ────────────────────────────────────────
+buildSelects();
+loadConfig(savedConfig);
+</script>
+</body>
+</html>

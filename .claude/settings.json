@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell.exe -NoProfile -Command \"pip install pydub groq python-dotenv\")"
+      "Bash(powershell.exe -NoProfile -Command \"pip install pydub groq python-dotenv\")",
+      "Bash(find c:/Users/弁護士法人響/Desktop/-/call-manager/api c:/Users/弁護士法人響/Desktop/-/my-dashboard/app -name *.json)",
+      "Bash(find c:/Users/弁護士法人響/Desktop/-/call-manager -name *.json)",
+      "Bash(grep -v node_modules find c:/Users/弁護士法人響/Desktop/-/my-dashboard -name *.json)",
+      "Bash(find c:/Users/弁護士法人響/Desktop/- -name .env*)"
     ]
   }
 }
