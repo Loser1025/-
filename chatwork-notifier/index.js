@@ -37,7 +37,14 @@ function buildTeamSection(teamName, rows, nameCol, dataCols, colLabels) {
   const validRows = rows.filter(row => (row[nameCol] ?? '').toString().trim() !== '');
   if (validRows.length === 0) return `■ ${teamName}\nデータなし`;
 
+  // KDR降順ソート (最終列)
+  const kdrCol = dataCols[dataCols.length - 1];
+  validRows.sort((a, b) => (parseInt(b[kdrCol]) || 0) - (parseInt(a[kdrCol]) || 0));
+
   const totals = dataCols.map(c => validRows.reduce((acc, row) => acc + (parseInt(row[c]) || 0), 0));
+
+  // 合計コール数をヘッダーに表示
+  const totalCalls = totals[0];
 
   // 各列の必要幅を計算（ヘッダー・データ・合計の最大値）
   const nameW = Math.max(dw('名前'), dw('合計'), ...validRows.map(r => dw((r[nameCol] ?? '').toString().trim())));
@@ -54,7 +61,7 @@ function buildTeamSection(teamName, rows, nameCol, dataCols, colLabels) {
   });
   const totalLine = rpad('合計', nameW) + '  ' + totals.map((t, i) => lpad(String(t), colWs[i])).join('  ');
 
-  return `■ ${teamName}\n[code]\n${headerLine}\n${dataLines.join('\n')}\n\n${totalLine}\n[/code]`;
+  return `■ ${teamName}（合計コール: ${totalCalls}）\n[code]\n${headerLine}\n${dataLines.join('\n')}\n\n${totalLine}\n[/code]`;
 }
 
 function formatMessage(rows) {
