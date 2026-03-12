@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>備考転記ツール</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #a8d8ea;
+      margin-bottom: 24px;
+      border-bottom: 1px solid #2a3a5e;
+      padding-bottom: 12px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #9aa5b4;
+      margin-bottom: 6px;
+    }
+    input[type="text"],
+    input[type="password"],
+    input[type="date"] {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0f3460;
+      border: 1px solid #2a4a7f;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      border-color: #4a90d9;
+    }
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+    .row .form-group {
+      flex: 1;
+    }
+    button#run-btn {
+      width: 100%;
+      padding: 12px;
+      background: #4a90d9;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    button#run-btn:hover:not(:disabled) {
+      background: #3579c4;
+    }
+    button#run-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .log-area {
+      margin-top: 24px;
+      background: #0a0a1a;
+      border-radius: 8px;
+      border: 1px solid #1e2a4a;
+      padding: 16px;
+      height: 280px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+    .log-area p {
+      margin: 0;
+      padding: 1px 0;
+    }
+    .log-area p.ok   { color: #7ec8a0; }
+    .log-area p.done { color: #a8d8ea; font-weight: bold; }
+    .log-area p.warn { color: #f5c518; }
+    .log-area p.err  { color: #ff6b6b; }
+    .log-area p.info { color: #c0c0c0; }
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: #9aa5b4;
+    }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #4a90d9;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>備考転記ツール</h1>
+
+  <div class="row">
+    <div class="form-group">
+      <label>ログインID</label>
+      <input type="text" id="login_id" placeholder="hibikiのID" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>パスワード</label>
+      <input type="password" id="login_pw" placeholder="hibikiのPW" autocomplete="current-password">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>対象日</label>
+    <input type="date" id="date" value="{{ today_iso }}">
+  </div>
+
+  <button id="run-btn" onclick="runTransfer()">実行</button>
+
+  <div class="log-area" id="log"></div>
+  <div class="status-bar">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text"></span>
+  </div>
+</div>
+
+<script>
+  const config = {{ config|safe }};
+  const todayIso = "{{ today_iso }}";
+
+  // 保存された認証情報を復元
+  if (config.login_id) document.getElementById('login_id').value = config.login_id;
+  if (config.login_pw) document.getElementById('login_pw').value = config.login_pw;
+
+  let polling = null;
+
+  function logLine(msg) {
+    const el = document.getElementById('log');
+    const p = document.createElement('p');
+    p.textContent = msg;
+    if (msg.startsWith('[OK]'))   p.className = 'ok';
+    else if (msg.startsWith('[完了]')) p.className = 'done';
+    else if (msg.startsWith('[WARN]')) p.className = 'warn';
+    else if (msg.startsWith('[ERROR]')) p.className = 'err';
+    else p.className = 'info';
+    el.appendChild(p);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setRunning(running) {
+    document.getElementById('run-btn').disabled = running;
+    document.getElementById('spinner').style.display = running ? 'block' : 'none';
+    document.getElementById('status-text').textContent = running ? '実行中...' : '';
+  }
+
+  async function runTransfer() {
+    const loginId = document.getElementById('login_id').value.trim();
+    const loginPw = document.getElementById('login_pw').value.trim();
+    const dateVal = document.getElementById('date').value; // YYYY-MM-DD
+
+    if (!loginId || !loginPw) {
+      alert('ログインIDとパスワードを入力してください。');
+      return;
+    }
+
+    // YYYY-MM-DD → YYYY/MM/DD
+    const date = dateVal.replace(/-/g, '/');
+
+    document.getElementById('log').innerHTML = '';
+    setRunning(true);
+
+    const res = await fetch('/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login_id: loginId, login_pw: loginPw, date }),
+    }).then(r => r.json()).catch(e => ({ error: e.message }));
+
+    if (res.error) {
+      logLine('[ERROR] ' + res.error);
+      setRunning(false);
+      return;
+    }
+
+    // ポーリング
+    let lastLen = 0;
+    polling = setInterval(async () => {
+      const st = await fetch('/status').then(r => r.json()).catch(() => null);
+      if (!st) return;
+
+      const newLogs = st.log.slice(lastLen);
+      newLogs.forEach(logLine);
+      lastLen = st.log.length;
+
+      if (!st.running) {
+        clearInterval(polling);
+        setRunning(false);
+      }
+    }, 800);
+  }
+</script>
+</body>
+</html>
