@@ -27,7 +27,7 @@ jobs:
 
       - name: Install Playwright Chromium
         working-directory: chatwork-notifier
-        run: ./node_modules/.bin/playwright install chromium --with-deps
+        run: node node_modules/playwright/cli.js install chromium --with-deps
 
       - name: Send report to Chatwork
         working-directory: chatwork-notifier
