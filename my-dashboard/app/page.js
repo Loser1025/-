@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts';
 import { 
   Trophy, Users, Target, Calendar, RefreshCw, 
@@ -44,6 +44,17 @@ const Dashboard = () => {
     return ((data.totalCount / data.totalTarget) * 100).toFixed(1);
   }, [data]);
 
+  // グラフ用データの加工（達成率順にソート）
+  const chartData = useMemo(() => {
+    if (!data?.units) return [];
+    return data.units
+      .map(unit => ({
+        ...unit,
+        rate: parseFloat(((unit.actual / (unit.target || 1)) * 100).toFixed(1))
+      }))
+      .sort((a, b) => b.rate - a.rate); // 達成率順にソート
+  }, [data]);
+
   const filteredPlayers = useMemo(() => {
     if (!data?.allPlayers) return [];
     if (!searchQuery) return data.allPlayers;
@@ -68,6 +79,35 @@ const Dashboard = () => {
       </div>
     );
   }
+
+  // カスタムツールチップ
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const unit = payload[0].payload;
+      return (
+        <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 ring-1 ring-black/5">
+          <p className="font-bold text-slate-800 mb-2 border-b border-slate-50 pb-1">{label}</p>
+          <div className="space-y-1">
+            <div className="flex justify-between gap-8 items-center">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">実績</span>
+              <span className="text-sm font-black text-slate-900">{unit.actual?.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">件</span></span>
+            </div>
+            <div className="flex justify-between gap-8 items-center">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">目標</span>
+              <span className="text-sm font-bold text-slate-500">{unit.target?.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">件</span></span>
+            </div>
+            <div className="flex justify-between gap-8 items-center pt-1 border-t border-slate-50">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">達成率</span>
+              <span className={`text-sm font-black ${unit.rate >= 100 ? 'text-emerald-600' : unit.rate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
+                {unit.rate}%
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 pb-12">
@@ -122,7 +162,6 @@ const Dashboard = () => {
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 mt-8">
-        {/* KPI Cards (Always visible or just for Overview? Let's keep them for Overview) */}
         {activeTab === 'overview' && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -201,16 +240,16 @@ const Dashboard = () => {
               <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
                 <h3 className="font-bold text-slate-800 mb-8 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-blue-600" />
-                  ユニット別進捗状況
+                  ユニット別達成率（%）
                 </h3>
                 <div className="h-[500px] w-full">
                   {loading ? (
                     <div className="h-full flex items-center justify-center text-slate-400 text-sm">読み込み中...</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data?.units} layout="vertical" margin={{ left: 20, right: 30 }}>
+                      <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 40, top: 30 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                        <XAxis type="number" hide />
+                        <XAxis type="number" domain={[0, 120]} hide />
                         <YAxis 
                           dataKey="name" 
                           type="category" 
@@ -221,19 +260,17 @@ const Dashboard = () => {
                         />
                         <Tooltip 
                           cursor={{ fill: '#f8fafc' }}
-                          contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
+                          content={<CustomTooltip />}
                         />
-                        <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px' }} />
-                        <Bar dataKey="actual" name="実績" radius={[0, 6, 6, 0]} barSize={24}>
-                          {data?.units.map((entry, index) => {
-                            const ratio = entry.actual / (entry.target || 1);
+                        <ReferenceLine x={100} stroke="#10b981" strokeDasharray="5 5" label={{ value: 'GOAL', position: 'top', fill: '#10b981', fontSize: 10, fontWeight: 800 }} />
+                        <Bar dataKey="rate" name="達成率" radius={[0, 6, 6, 0]} barSize={24}>
+                          {chartData.map((entry, index) => {
                             let color = "#3b82f6"; 
-                            if (ratio >= 1.0) color = "#10b981"; 
-                            else if (ratio < 0.8) color = "#f59e0b"; 
+                            if (entry.rate >= 100) color = "#10b981"; 
+                            else if (entry.rate < 80) color = "#f59e0b"; 
                             return <Cell key={`cell-${index}`} fill={color} />;
                           })}
                         </Bar>
-                        <Bar dataKey="target" name="目標" fill="#f1f5f9" radius={[0, 6, 6, 0]} barSize={24} />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -245,7 +282,6 @@ const Dashboard = () => {
 
         {activeTab === 'details' && (
           <div className="space-y-8">
-            {/* Individual Table with Search */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h3 className="font-bold flex items-center gap-2 text-slate-800">
@@ -311,7 +347,6 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Unit Stats Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100">
                 <h3 className="font-bold flex items-center gap-2 text-slate-800">
@@ -325,7 +360,7 @@ const Dashboard = () => {
                     <tr className="bg-slate-50">
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">ユニット名</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">実績</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">必要数</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">目標</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">達成率</th>
                     </tr>
                   </thead>
