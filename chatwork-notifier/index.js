@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 
 const SPREADSHEET_ID = '1g0RjsqSkSRmBzdLyjhNzhV9oE1AHRe2GBf2RAURLkxY';
 const RANGE = '行動量!AG2:AX61';
-const CHATWORK_ROOM_ID = '424170453';
+const CHATWORK_ROOM_ID = '384456982';
 
 async function getSheetData() {
   const auth = new google.auth.GoogleAuth({
