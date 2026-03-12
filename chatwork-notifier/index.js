@@ -22,33 +22,25 @@ async function getSheetData() {
   return response.data.values || [];
 }
 
-function pad(str, len, right = false) {
-  const s = String(str ?? '');
-  if (right) return s.padEnd(len);
-  return s.padStart(len);
-}
-
 function buildTeamSection(teamName, rows, nameCol, dataCols, colLabels) {
   const validRows = rows.filter(row => (row[nameCol] ?? '').toString().trim() !== '');
   if (validRows.length === 0) return `■ ${teamName}\nデータなし`;
 
   const header = `■ ${teamName}`;
-  const divider = '─'.repeat(40);
-  const colHead = pad('名前', 8, true) + ' ' + colLabels.map(l => pad(l, 5)).join(' ');
+  const colHead = ['名前', ...colLabels].join('|');
 
   const lines = validRows.map(row => {
-    const name = pad((row[nameCol] ?? '').toString().trim(), 8, true);
-    const vals = dataCols.map(c => pad((row[c] ?? '0').toString().trim(), 5));
-    return name + ' ' + vals.join(' ');
+    const name = (row[nameCol] ?? '').toString().trim();
+    const vals = dataCols.map(c => (row[c] ?? '0').toString().trim());
+    return [name, ...vals].join('|');
   });
 
-  const totals = dataCols.map(c => {
-    const sum = validRows.reduce((acc, row) => acc + (parseInt(row[c]) || 0), 0);
-    return pad(sum, 5);
-  });
-  const totalLine = pad('【合計】', 8, true) + ' ' + totals.join(' ');
+  const totals = dataCols.map(c =>
+    validRows.reduce((acc, row) => acc + (parseInt(row[c]) || 0), 0)
+  );
+  const totalLine = ['合計', ...totals].join('|');
 
-  return [header, divider, colHead, ...lines, divider, totalLine].join('\n');
+  return [header, colHead, ...lines, totalLine].join('\n');
 }
 
 function formatMessage(rows) {
