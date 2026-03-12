@@ -109,7 +109,7 @@ async function sendToChatwork(message) {
     await page.waitForSelector('input[type="password"]', { timeout: 15000 });
     await page.fill('input[type="password"]', process.env.CHATWORK_PASSWORD);
     await page.click('button[type="submit"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 60000 });
     console.log('ログイン完了');
 
     console.log('ルームに移動中...');
