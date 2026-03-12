@@ -1,0 +1,41 @@
+name: Chatwork 行動量レポート送信
+
+on:
+  schedule:
+    # 毎時0分に実行 (UTC) = 日本時間 毎時9分オフセット
+    # 平日 JST 9:00-19:00 = UTC 0:00-10:00
+    - cron: '0 0-10 * * 1-5'
+  workflow_dispatch:  # 手動実行ボタン
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: chatwork-notifier/package-lock.json
+
+      - name: Install dependencies
+        working-directory: chatwork-notifier
+        run: npm install
+
+      - name: Install Playwright Chromium
+        working-directory: chatwork-notifier
+        run: npx playwright install chromium --with-deps
+
+      - name: Send report to Chatwork
+        working-directory: chatwork-notifier
+        env:
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          CHATWORK_EMAIL: ${{ secrets.CHATWORK_EMAIL }}
+          CHATWORK_PASSWORD: ${{ secrets.CHATWORK_PASSWORD }}
+        run: node index.js
