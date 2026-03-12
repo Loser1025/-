@@ -83,7 +83,11 @@ function formatMessage(rows) {
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const dateStr = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()} ${String(jst.getUTCHours()).padStart(2,'0')}:00`;
 
-  return `[info][title]📊 行動量レポート ${dateStr}[/title]\n${leftSection}\n${rightSection}\n[/info]`;
+  const allRows = [...dataRows];
+  const totalCallsAll =
+    allRows.reduce((acc, r) => acc + (parseInt(r[3]) || 0) + (parseInt(r[12]) || 0), 0);
+
+  return `[info][title]📊 行動量レポート ${dateStr}  総合計コール: ${totalCallsAll}[/title]\n${leftSection}\n${rightSection}\n[/info]`;
 }
 
 async function sendToChatwork(message) {
