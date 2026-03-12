@@ -1,11 +1,7 @@
 name: Chatwork 行動量レポート送信
 
 on:
-  schedule:
-    # 毎時5分に実行 (UTC)  JST 10:05〜22:05（毎日）
-    # JST 10:00-22:00 = UTC 01:00-13:00
-    - cron: '5 1-13 * * *'
-  workflow_dispatch:  # 手動実行ボタン
+  workflow_dispatch:  # cron-job.org経由またはGitHub画面から手動実行
 
 jobs:
   notify:
