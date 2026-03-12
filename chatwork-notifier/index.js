@@ -22,25 +22,39 @@ async function getSheetData() {
   return response.data.values || [];
 }
 
+// 全角=2幅・半角=1幅で表示幅を計算
+function dw(str) {
+  let w = 0;
+  for (const ch of String(str)) {
+    w += /[\u1100-\u115F\u2E80-\u303F\u3040-\u33FF\uFF00-\uFFEF\u4E00-\u9FFF\uF900-\uFAFF\u3400-\u4DBF]/.test(ch) ? 2 : 1;
+  }
+  return w;
+}
+function rpad(str, w) { return String(str) + ' '.repeat(Math.max(0, w - dw(str))); }
+function lpad(str, w) { return ' '.repeat(Math.max(0, w - dw(str))) + String(str); }
+
 function buildTeamSection(teamName, rows, nameCol, dataCols, colLabels) {
   const validRows = rows.filter(row => (row[nameCol] ?? '').toString().trim() !== '');
   if (validRows.length === 0) return `■ ${teamName}\nデータなし`;
 
-  const header = `■ ${teamName}`;
-  const colHead = ['名前', ...colLabels].join('|');
+  const totals = dataCols.map(c => validRows.reduce((acc, row) => acc + (parseInt(row[c]) || 0), 0));
 
-  const lines = validRows.map(row => {
-    const name = (row[nameCol] ?? '').toString().trim();
-    const vals = dataCols.map(c => (row[c] ?? '0').toString().trim());
-    return [name, ...vals].join('|');
+  // 各列の必要幅を計算（ヘッダー・データ・合計の最大値）
+  const nameW = Math.max(dw('名前'), dw('合計'), ...validRows.map(r => dw((r[nameCol] ?? '').toString().trim())));
+  const colWs = colLabels.map((label, i) => {
+    const c = dataCols[i];
+    return Math.max(dw(label), dw(String(totals[i])), ...validRows.map(r => dw((r[c] ?? '0').toString().trim())));
   });
 
-  const totals = dataCols.map(c =>
-    validRows.reduce((acc, row) => acc + (parseInt(row[c]) || 0), 0)
-  );
-  const totalLine = ['合計', ...totals].join('|');
+  const headerLine = rpad('名前', nameW) + '  ' + colLabels.map((l, i) => lpad(l, colWs[i])).join('  ');
+  const dataLines  = validRows.map(row => {
+    const name = rpad((row[nameCol] ?? '').toString().trim(), nameW);
+    const vals  = dataCols.map((c, i) => lpad((row[c] ?? '0').toString().trim(), colWs[i]));
+    return name + '  ' + vals.join('  ');
+  });
+  const totalLine = rpad('合計', nameW) + '  ' + totals.map((t, i) => lpad(String(t), colWs[i])).join('  ');
 
-  return [header, colHead, ...lines, totalLine].join('\n');
+  return `■ ${teamName}\n[code]\n${headerLine}\n${dataLines.join('\n')}\n\n${totalLine}\n[/code]`;
 }
 
 function formatMessage(rows) {
@@ -62,7 +76,7 @@ function formatMessage(rows) {
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const dateStr = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()} ${String(jst.getUTCHours()).padStart(2,'0')}:00`;
 
-  return `[info][title]📊 行動量レポート ${dateStr}[/title]\n${leftSection}\n\n${rightSection}\n[/info]`;
+  return `[info][title]📊 行動量レポート ${dateStr}[/title]\n${leftSection}\n${rightSection}\n[/info]`;
 }
 
 async function sendToChatwork(message) {
