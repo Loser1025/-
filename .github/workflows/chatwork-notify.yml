@@ -2,9 +2,9 @@ name: Chatwork 行動量レポート送信
 
 on:
   schedule:
-    # 毎時0分に実行 (UTC) = 日本時間 毎時9分オフセット
-    # 平日 JST 9:00-19:00 = UTC 0:00-10:00
-    - cron: '0 0-10 * * 1-5'
+    # 毎時5分に実行 (UTC)  JST 10:05〜22:05（毎日）
+    # JST 10:00-22:00 = UTC 01:00-13:00
+    - cron: '5 1-13 * * *'
   workflow_dispatch:  # 手動実行ボタン
 
 jobs:
