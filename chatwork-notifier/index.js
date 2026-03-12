@@ -82,16 +82,18 @@ async function sendToChatwork(message) {
     console.log('Chatworkにログイン中...');
     await page.goto('https://kcw.kddi.ne.jp/', { waitUntil: 'domcontentloaded' });
 
-    // メールアドレス入力
-    await page.waitForSelector('input[name="email"], input[type="email"], #email', { timeout: 15000 });
-    await page.fill('input[name="email"], input[type="email"], #email', process.env.CHATWORK_EMAIL);
+    // Step1: メールアドレス入力 (Auth0 ULP: #username)
+    await page.waitForSelector('#username', { timeout: 15000 });
+    await page.fill('#username', process.env.CHATWORK_EMAIL);
+    await page.click('button[type="submit"]');
+    console.log('メール入力完了、パスワード待機中...');
 
-    // パスワード入力
-    await page.fill('input[name="password"], input[type="password"], #password', process.env.CHATWORK_PASSWORD);
-
-    // ログインボタン
-    await page.click('button[type="submit"], input[type="submit"], #login_button, .btn_login');
+    // Step2: パスワード入力
+    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+    await page.fill('input[type="password"]', process.env.CHATWORK_PASSWORD);
+    await page.click('button[type="submit"]');
     await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 });
+    console.log('ログイン完了');
 
     console.log('ルームに移動中...');
     await page.goto(`https://kcw.kddi.ne.jp/#!rid${CHATWORK_ROOM_ID}`, { waitUntil: 'domcontentloaded' });
