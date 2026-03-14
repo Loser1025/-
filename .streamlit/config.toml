@@ -1,0 +1,3 @@
+[server]
+# アップロード上限を1000MB (1GB) に設定
+maxUploadSize = 1000

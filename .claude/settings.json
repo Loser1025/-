@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -NoProfile -Command \"pip install pydub groq python-dotenv\")",
+      "Bash(find c:/Users/弁護士法人響/Desktop/-/call-manager/api c:/Users/弁護士法人響/Desktop/-/my-dashboard/app -name *.json)",
+      "Bash(find c:/Users/弁護士法人響/Desktop/-/call-manager -name *.json)",
+      "Bash(grep -v node_modules find c:/Users/弁護士法人響/Desktop/-/my-dashboard -name *.json)",
+      "Bash(find c:/Users/弁護士法人響/Desktop/- -name .env*)",
+      "Bash(gh auth:*)",
+      "Bash(curl --version)",
+      "Bash(git --version)",
+      "Bash(find /c/Users/弁護士法人響 -name *.json)",
+      "Bash(find /c/Users/弁護士法人響/Desktop/-/my-dashboard -name *.json)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -H \"Authorization: token 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\" -H \"Accept: application/vnd.github+json\" \"https://api.github.com/repos/Loser1025/-/actions/secrets/public-key\")",
+      "Bash(mkdir -p /tmp/gh-secrets)",
+      "Read(//tmp/**)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(node set-secrets.js)",
+      "Bash(curl -s -H \"Authorization: token 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\" -H \"Accept: application/vnd.github+json\" \"https://api.github.com/repos/Loser1025/-/actions/runs?per_page=3\")",
+      "Bash(node -e \"const d=require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\); const r=JSON.parse\\(d\\); r.workflow_runs.forEach\\(w=>console.log\\(w.id, w.name, w.status, w.conclusion, w.created_at\\)\\)\")",
+      "Bash(curl -s -H \"Authorization: token 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\" -H \"Accept: application/vnd.github+json\" \"https://api.github.com/repos/Loser1025/-/actions/runs?per_page=1\")",
+      "Bash(\"C:/Users/弁護士法人響/AppData/Local/Temp/runs.json\")",
+      "Bash(node -e \"const r=require\\(''C:/Users/弁護士法人響/AppData/Local/Temp/runs.json''\\); const w=r.workflow_runs[0]; console.log\\(w.id, w.status, w.conclusion, w.created_at\\)\")",
+      "Read(//home/loser/.claude/gemini-mcp/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\弁護士法人響\\.claude\\projects\\c--Users--------Desktop--\\memory",
+      "C:\\Users\\弁護士法人響\\AppData\\Local\\Temp\\gh-secrets",
+      "\\tmp",
+      "C:\\Users\\弁護士法人響\\AppData\\Local\\Temp"
+    ]
+  }
+}

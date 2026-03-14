@@ -1,0 +1,35 @@
+name: Chatwork 行動量レポート送信
+
+on:
+  workflow_dispatch:  # cron-job.org経由またはGitHub画面から手動実行
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        working-directory: chatwork-notifier
+        run: npm install
+
+      - name: Install Playwright Chromium
+        working-directory: chatwork-notifier
+        run: node node_modules/playwright/cli.js install chromium --with-deps
+
+      - name: Send report to Chatwork
+        working-directory: chatwork-notifier
+        env:
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          CHATWORK_EMAIL: ${{ secrets.CHATWORK_EMAIL }}
+          CHATWORK_PASSWORD: ${{ secrets.CHATWORK_PASSWORD }}
+        run: node index.js
