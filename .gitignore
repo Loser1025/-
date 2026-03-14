@@ -5,3 +5,4 @@ __pycache__/
 *.so
 *.dll
 *.pyc
+telegram-rag-bot/pdfs/
