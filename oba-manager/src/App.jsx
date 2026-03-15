@@ -6,6 +6,19 @@ import {
 } from "lucide-react";
 import accountList from '../アカウント.json';
 const ACCOUNT_ID_MAP = Object.fromEntries(accountList.filter(a => a.id).map(a => [a.name, a.id]));
+const findAccountId = (accountName) => {
+  if (!accountName) return null;
+  // 完全一致
+  if (ACCOUNT_ID_MAP[accountName]) return ACCOUNT_ID_MAP[accountName];
+  const norm = (s) => s.toLowerCase().replace(/\s/g, '').replace(/[／/]/g, '/');
+  const n = norm(accountName);
+  // 正規化後の完全一致・部分一致
+  for (const [name, id] of Object.entries(ACCOUNT_ID_MAP)) {
+    const nn = norm(name);
+    if (nn === n || nn.includes(n) || n.includes(nn)) return id;
+  }
+  return null;
+};
 
 // --- Configuration ---
 // TODO: おばシートのスプレッドシートIDとシート名を設定してください
@@ -78,11 +91,14 @@ const parseRakkarCell = (raw) => {
     if (!name && (line.startsWith('ID：') || line.startsWith('ID:'))) {
       const m = line.match(/ID[：:]\S+\s+(.+)/);
       if (m) name = m[1].trim();
-    } else if (!lstepUrl && (line.includes('linestep') || line.match(/^Lステ[：:]/))) {
-      const urlM = line.match(/https?:\/\/\S+/);
-      if (urlM) lstepUrl = urlM[0];
-    } else if (!account && line.match(/^アカウント[：:]/)) {
+    } else if (line.match(/^アカウント[：:]/)) {
       account = line.replace(/^アカウント[：:]/, '').trim();
+    } else if (line.startsWith('http') || line.match(/^Lステ[：:]/)) {
+      const urlM = line.match(/https?:\/\/\S+/);
+      if (urlM && !lstepUrl) lstepUrl = urlM[0];
+    } else if (!account && name && !line.startsWith('http')) {
+      // 名前の次にくる非URLの行をアカウント名として扱う（【Lステアカウント名】形式）
+      account = line;
     }
   }
   // name が取れなかった場合、最初の行をそのまま使う
@@ -277,7 +293,8 @@ export default function App() {
         date:                detectCol(values, ['キャンセル申告日', '日付'], 0),
         product:             detectCol(values, ['商材'], 1),
         author:              detectCol(values, ['記入者'], 2),
-        rakkar:              detectCol(values, ['rakkar', 'Lステ', '顧客'], 3),
+        account:             detectCol(values, ['アカウント'], 3),
+        rakkar:              detectCol(values, ['rakkar', 'Lステ', '顧客'], 4),
         result:              detectCol(values, ['架電結果'], DEFAULT_RESULT_COL_IDX),
         firstResponseDate:   detectCol(values, ['架電開始日'], -1),
         appoDate:            detectCol(values, ['アポ日時'], 6),
@@ -954,8 +971,8 @@ export default function App() {
             <p className="text-[#64748B] text-sm mb-6 leading-relaxed">Lステップで以下のアカウントに切り替えてください</p>
             <div className="bg-[#EEF2FF] text-[#4F46E5] font-[900] py-4 rounded-[18px] mb-6 text-base border border-indigo-100">
               {lstepConfirm.account || '（アカウント不明）'}
-              {ACCOUNT_ID_MAP[lstepConfirm.account] && (
-                <div className="text-[12px] font-black text-[#6366F1] mt-1 tracking-widest">ID: {ACCOUNT_ID_MAP[lstepConfirm.account]}</div>
+              {findAccountId(lstepConfirm.account) && (
+                <div className="text-[12px] font-black text-[#6366F1] mt-1 tracking-widest">ID: {findAccountId(lstepConfirm.account)}</div>
               )}
             </div>
             <div className="flex gap-3">
