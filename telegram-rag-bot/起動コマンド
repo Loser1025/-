@@ -1,0 +1,3 @@
+cd /home/loser/projects/-/telegram-rag-bot
+source venv/bin/activate
+python bot.py

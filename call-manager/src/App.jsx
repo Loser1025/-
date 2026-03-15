@@ -20,14 +20,14 @@ const idxToCol = (idx) => {
 
 const countCalls = (text) => {
   if (!text) return 0;
-  return (text.match(/架電[①②③]/g) || []).length;
+  return (text.match(/架電[①②③④⑤⑥⑦⑧]/g) || []).length;
 };
 
 const parseCallLogs = (text) => {
   if (!text) return [];
   return text.split('\n').filter(l => l.trim()).reduce((acc, line) => {
-    const m = line.match(/架電([①②③])\s*(.+)/);
-    if (m) acc.push({ round: {'①':1,'②':2,'③':3}[m[1]]||1, result: m[2].trim(), note: '', date: '' });
+    const m = line.match(/架電([①②③④⑤⑥⑦⑧])\s*(.+)/);
+    if (m) acc.push({ round: {'①':1,'②':2,'③':3,'④':4,'⑤':5,'⑥':6,'⑦':7,'⑧':8}[m[1]]||1, result: m[2].trim(), note: '', date: '' });
     return acc;
   }, []);
 };
@@ -340,8 +340,11 @@ function CallManager() {
   const isTerminal = (r) => r.callLogs.some(l => TERMINAL_RESULTS.includes(l.result));
   const isDealDone = (r) => !!(r.cancelStopDate || r.team?.includes('解約処理'));
   const isApo = (r) => !!r.naCall && !['TRUE', 'FALSE'].includes(r.naCall.toUpperCase());
-  const filtered = (count) => records.filter(r => r.callCount === count - 1 && count <= 3 && !isTerminal(r) && !isDealDone(r) && !isApo(r));
-  const completed = records.filter(r => r.callCount >= 3 || isTerminal(r) || isDealDone(r));
+  const filtered = (count) => {
+    if (count === 3) return records.filter(r => r.callCount >= 2 && r.callCount <= 6 && !isTerminal(r) && !isDealDone(r) && !isApo(r));
+    return records.filter(r => r.callCount === count - 1 && !isTerminal(r) && !isDealDone(r) && !isApo(r));
+  };
+  const completed = records.filter(r => r.callCount >= 8 || isTerminal(r) || isDealDone(r));
 
 
   const openModal = (id) => { setModal({ id }); setForm(EMPTY_FORM); };
@@ -356,9 +359,10 @@ function CallManager() {
     const terminal = TERMINAL_RESULTS.includes(form.result);
     const apoMiss = form.result === "アポ不通";
     const apoGet = form.result === "通話アポ獲得";
-    const callNum = ['①', '②', '③'][rec.callCount] || '③';
+    const callNum = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'][rec.callCount] || '⑧';
     const apoCount = rec.callLogs.filter(l => l.result === 'アポ不通').length;
-    const apoNum = ['①', '②', '③'][apoCount] || '③';
+    const apoNum = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'][apoCount] || '⑧';
+    const autoCancel = rec.callCount === 6 && form.result === '不在';
     const apoGetDateStr = apoGet && form.naCallDate
       ? ` ${form.naCallDate}${form.naCallTime ? ' ' + form.naCallTime : ''}`
       : '';
@@ -433,8 +437,8 @@ function CallManager() {
           body: JSON.stringify({ values: [[form.cancelStopDate]] }),
         });
       }
-      // 解約処理: 対応チーム列に「解約処理」を書き込み
-      if (form.cancelProcess && cols.team >= 0) {
+      // 解約処理: 対応チーム列に「解約処理」を書き込み（7回目不在時は自動）
+      if ((form.cancelProcess || autoCancel) && cols.team >= 0) {
         const r = encodeURIComponent(`${sheetName}!${idxToCol(cols.team)}${rec.rowIndex}`);
         await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${r}?valueInputOption=USER_ENTERED`, {
           method: 'PUT',
@@ -493,7 +497,7 @@ function CallManager() {
         callCount: (terminal || apoMiss) ? r.callCount : r.callCount + 1,
         callLogs: [...r.callLogs, { round: r.callCount + 1, result: form.result, note: form.note, date: today }],
         cancelStopDate: form.cancelStopDate || r.cancelStopDate,
-        team: form.cancelProcess ? '解約処理' : (form.team || r.team),
+        team: (form.cancelProcess || autoCancel) ? '解約処理' : (form.team || r.team),
         naCall: form.naCallDate ? (form.naCallTime ? `${form.naCallDate} ${form.naCallTime}` : form.naCallDate) : '',
         sharedMemo: '',
       };
@@ -613,7 +617,7 @@ function CallManager() {
 
   if (!token) {
     return (
-      <div style={{ minHeight: "100vh", background: "#F8F9FA", fontFamily: "'Noto Sans JP', sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", width: "100%", background: "#F8F9FA", fontFamily: "'Noto Sans JP', sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
         <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 20, padding: "48px 40px", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.08)", maxWidth: 380, width: "100%" }}>
           <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #6366F1, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 20px" }}>📞</div>
@@ -639,56 +643,60 @@ function CallManager() {
 
   // ─── Main App ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100vh", background: "#F8F9FA", fontFamily: "'Noto Sans JP', sans-serif", color: "#1F2937" }}>
+    <div style={{ minHeight: "100vh", width: "100%", background: "#F8F9FA", fontFamily: "'Noto Sans JP', sans-serif", color: "#1F2937", display: "flex", flexDirection: "column", alignItems: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
 
       {/* Header */}
-      <div style={{ borderBottom: "1px solid #E5E7EB", background: "#fff", padding: "20px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #6366F1, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📞</div>
-        <div>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" }}>架電リスト管理</div>
-          <div style={{ fontSize: 12, color: "#6B7280" }}>Call Management System</div>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 3, gap: 2 }}>
-            {['EAST', 'WEST', 'ATOM'].map(r => (
-              <button key={r} onClick={() => { setRegion(r); localStorage.setItem('cm_region', r); setRecords([]); setActiveTab(1); localStorage.setItem('cm_tab', '1'); }} style={{
-                background: region === r ? "#fff" : "transparent",
-                border: "none", borderRadius: 6, padding: "4px 12px",
-                fontSize: 12, fontWeight: 700, cursor: "pointer",
-                color: region === r ? "#4F46E5" : "#6B7280",
-                boxShadow: region === r ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                transition: "all 0.15s"
-              }}>{r}</button>
-            ))}
+      <div style={{ borderBottom: "1px solid #E5E7EB", background: "#fff", width: "100%" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 32px", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #6366F1, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📞</div>
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" }}>架電リスト管理</div>
+            <div style={{ fontSize: 12, color: "#6B7280" }}>Call Management System</div>
           </div>
-          <div style={{ fontSize: 13, color: "#6B7280" }}>総件数: <span style={{ color: "#1F2937", fontWeight: 600 }}>{records.length}</span></div>
-          <button onClick={() => { setToken(null); localStorage.removeItem('gtoken'); localStorage.removeItem('gtoken_expiry'); }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>ログアウト</button>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 3, gap: 2 }}>
+              {['EAST', 'WEST', 'ATOM'].map(r => (
+                <button key={r} onClick={() => { setRegion(r); localStorage.setItem('cm_region', r); setRecords([]); setActiveTab(1); localStorage.setItem('cm_tab', '1'); }} style={{
+                  background: region === r ? "#fff" : "transparent",
+                  border: "none", borderRadius: 6, padding: "4px 12px",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  color: region === r ? "#4F46E5" : "#6B7280",
+                  boxShadow: region === r ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  transition: "all 0.15s"
+                }}>{r}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 13, color: "#6B7280" }}>総件数: <span style={{ color: "#1F2937", fontWeight: 600 }}>{records.length}</span></div>
+            <button onClick={() => { setToken(null); localStorage.removeItem('gtoken'); localStorage.removeItem('gtoken_expiry'); }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>ログアウト</button>
+          </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #E5E7EB", padding: "0 32px", background: "#fff" }}>
-        {tabData.map((t, i) => (
-          <button key={i} onClick={() => { setActiveTab(i + 1); localStorage.setItem('cm_tab', String(i + 1)); setSortOrder(null); setSortOpen(false); loadData(); }} style={{
-            background: "none", border: "none", cursor: "pointer",
-            padding: "14px 24px", fontSize: 14, fontWeight: 500,
-            color: activeTab === i + 1 ? "#4F46E5" : "#6B7280",
-            borderBottom: activeTab === i + 1 ? "2px solid #4F46E5" : "2px solid transparent",
-            transition: "all 0.15s", display: "flex", alignItems: "center", gap: 8
-          }}>
-            {t.label}
-            <span style={{
-              background: activeTab === i + 1 ? "#EEF2FF" : "#F3F4F6",
-              color: activeTab === i + 1 ? "#4F46E5" : "#9CA3AF",
-              borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700
-            }}>{t.count}</span>
-          </button>
-        ))}
+      <div style={{ borderBottom: "1px solid #E5E7EB", background: "#fff", width: "100%" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0, padding: "0 32px" }}>
+          {tabData.map((t, i) => (
+            <button key={i} onClick={() => { setActiveTab(i + 1); localStorage.setItem('cm_tab', String(i + 1)); setSortOrder(null); setSortOpen(false); loadData(); }} style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "14px 24px", fontSize: 14, fontWeight: 500,
+              color: activeTab === i + 1 ? "#4F46E5" : "#6B7280",
+              borderBottom: activeTab === i + 1 ? "2px solid #4F46E5" : "2px solid transparent",
+              transition: "all 0.15s", display: "flex", alignItems: "center", gap: 8
+            }}>
+              {t.label}
+              <span style={{
+                background: activeTab === i + 1 ? "#EEF2FF" : "#F3F4F6",
+                color: activeTab === i + 1 ? "#4F46E5" : "#9CA3AF",
+                borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700
+              }}>{t.count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* List */}
-      <div style={{ padding: "24px 32px", maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ padding: "24px 32px", maxWidth: 900, margin: "0 auto", width: "100%" }}>
         {/* 並び替えUI */}
         {!loading && !error && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
@@ -744,8 +752,18 @@ function CallManager() {
               {(() => {
                 const apoMissCount = activeTab === 1 ? r.callLogs.filter(l => l.result === 'アポ不通').length : r.callCount;
                 const dispCount = activeTab === 1 ? apoMissCount : r.callCount;
-                const bg = dispCount === 0 ? "linear-gradient(135deg,#DBEAFE,#BFDBFE)" : dispCount === 1 ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "linear-gradient(135deg,#D1FAE5,#A7F3D0)";
-                const col = dispCount === 0 ? "#1D4ED8" : dispCount === 1 ? "#6D28D9" : "#065F46";
+                const BG_MAP = [
+                  "linear-gradient(135deg,#DBEAFE,#BFDBFE)",
+                  "linear-gradient(135deg,#EDE9FE,#DDD6FE)",
+                  "linear-gradient(135deg,#D1FAE5,#A7F3D0)",
+                  "linear-gradient(135deg,#FEF3C7,#FDE68A)",
+                  "linear-gradient(135deg,#FCE7F3,#FBCFE8)",
+                  "linear-gradient(135deg,#FEE2E2,#FECACA)",
+                  "linear-gradient(135deg,#F3F4F6,#E5E7EB)",
+                ];
+                const COL_MAP = ["#1D4ED8","#6D28D9","#065F46","#92400E","#9D174D","#991B1B","#374151"];
+                const bg = BG_MAP[dispCount] || BG_MAP[BG_MAP.length - 1];
+                const col = COL_MAP[dispCount] || COL_MAP[COL_MAP.length - 1];
                 return (
                   <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: col }}>
                     {`${dispCount + 1}回`}

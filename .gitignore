@@ -1,1 +1,8 @@
 node_modules/
+venv/
+.venv/
+__pycache__/
+*.so
+*.dll
+*.pyc
+telegram-rag-bot/pdfs/
