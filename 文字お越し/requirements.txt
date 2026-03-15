@@ -1,3 +1,0 @@
-groq
-pydub
-python-dotenv
